@@ -75,6 +75,9 @@ dependencies {
     // WebSocket client
     implementation(libs.java.websocket) // WebSocket library for communication
 
+    // QR Code scanning
+    implementation(libs.zxing.android.embedded) // ZXing for QR code scanning
+
     // Testing dependencies
     testImplementation(libs.junit) // JUnit for unit testing
     androidTestImplementation(libs.androidx.junit.v121) // JUnit extensions for Android

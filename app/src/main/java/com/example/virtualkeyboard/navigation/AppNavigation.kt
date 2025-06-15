@@ -1,43 +1,76 @@
 package com.example.virtualkeyboard.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.example.virtualkeyboard.ui.screens.ConnectScreen
-import com.example.virtualkeyboard.ui.screens.KeyboardScreen
-import com.example.virtualkeyboard.ui.screens.SettingsScreen
-
-sealed class Screen(val route: String) {
-    object Connect : Screen("connect")
-    object Keyboard : Screen("keyboard")
-    object Settings : Screen("settings")
-}
+import com.example.virtualkeyboard.ui.screens.*
+import com.example.virtualkeyboard.ui.viewmodels.MainViewModel
+import com.example.virtualkeyboard.ui.viewmodels.QRScannerViewModel
+import com.example.virtualkeyboard.ui.viewmodels.events.MainEvent
 
 @Composable
-fun AppNavigation() {
-    val navController = rememberNavController()
+fun AppNavigation(
+    navController: NavHostController = rememberNavController(),
+    mainViewModel: MainViewModel = viewModel()
+) {
+    val qrScannerViewModel: QRScannerViewModel = viewModel()
+    val mainState by mainViewModel.state.collectAsState()
 
-    NavHost(navController = navController, startDestination = Screen.Connect.route) {
+    NavHost(
+        navController = navController,
+        startDestination = Screen.Home.route
+    ) {
+        composable(Screen.Home.route) {
+            HomeScreen(
+                state = mainState,
+                onConnectClick = { navController.navigate(Screen.Connect.route) },
+                onDisconnectClick = { mainViewModel.onEvent(MainEvent.Disconnect) },
+                onSettingsClick = { navController.navigate(Screen.Settings.route) }
+            )
+        }
+
         composable(Screen.Connect.route) {
             ConnectScreen(
-                onNavigateToKeyboard = {
-                    navController.navigate(Screen.Keyboard.route)
-                }
+                onManualConnect = { info ->
+                    mainViewModel.onEvent(MainEvent.SetConnectionInfo(info))
+                    mainViewModel.onEvent(MainEvent.Connect)
+                    navController.navigate(Screen.Home.route) {
+                        popUpTo(Screen.Home.route) { inclusive = true }
+                    }
+                },
+                onQRScanClick = { navController.navigate(Screen.QRScanner.route) },
+                onBackPressed = { navController.popBackStack() }
             )
         }
-        composable(Screen.Keyboard.route) {
-            KeyboardScreen(
-                onNavigateToSettings = {
-                    navController.navigate(Screen.Settings.route)
-                }
+
+        composable(Screen.QRScanner.route) {
+            QRScannerScreen(
+                onQRCodeScanned = { result ->
+                    mainViewModel.onEvent(MainEvent.SetConnectionInfo(result))
+                    mainViewModel.onEvent(MainEvent.Connect)
+                    navController.navigate(Screen.Home.route) {
+                        popUpTo(Screen.Home.route) { inclusive = true }
+                    }
+                },
+                onBackPressed = { navController.popBackStack() },
+                viewModel = qrScannerViewModel
             )
         }
+
         composable(Screen.Settings.route) {
             SettingsScreen(
-                onNavigateBack = {
-                    navController.popBackStack()
+                onBackPressed = { navController.popBackStack() }
+            )
                 }
+
+        composable(Screen.About.route) {
+            AboutScreen(
+                onBackPressed = { navController.popBackStack() }
             )
         }
     }
