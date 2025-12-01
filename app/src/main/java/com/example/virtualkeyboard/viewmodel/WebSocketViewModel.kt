@@ -1,32 +1,24 @@
 package com.example.virtualkeyboard.viewmodel
 
+import android.util.Base64
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.Job
 import org.java_websocket.client.WebSocketClient
 import org.java_websocket.handshake.ServerHandshake
 import org.json.JSONObject
 import java.net.URI
-import javax.net.ssl.SSLContext
-import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
-import javax.crypto.spec.SecretKeySpec
-import android.util.Base64
 import java.security.SecureRandom
-import javax.crypto.spec.IvParameterSpec
-import javax.crypto.Mac
-import javax.crypto.spec.SecretKeySpec as HmacKeySpec
-
-// Standard Android crypto imports for AES-GCM
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.SecretKeySpec as AesKeySpec
 import java.util.concurrent.ConcurrentLinkedQueue
+import javax.crypto.Cipher
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 
 class WebSocketViewModel : ViewModel() {
     
@@ -88,6 +80,20 @@ class WebSocketViewModel : ViewModel() {
     private var maxRetryAttempts = 3
     private var reconnectionAttempts = 0
     private var baseReconnectionDelay = 1000L // 1 second
+    
+    // Message acknowledgment system
+    private val pendingMessages = mutableMapOf<String, PendingMessage>()
+    private val acknowledgmentTimeout = 5000L // 5 seconds
+    private var acknowledgmentJob: Job? = null
+    
+    data class PendingMessage(
+        val messageId: String,
+        val message: String,
+        val timestamp: Long,
+        val retryCount: Int = 0,
+        val maxRetries: Int = 3,
+        val requiresAck: Boolean = true
+    )
     
     companion object {
         private const val TAG = "WebSocketViewModel"
@@ -152,6 +158,8 @@ class WebSocketViewModel : ViewModel() {
                             _lastError.value = ex?.message ?: "Unknown error"
                             stopKeepAlive()
                             stopConnectionHealthCheck()
+                            // Attempt auto-reconnection
+                            startAutoReconnection()
                         }
                     }
                 }
@@ -167,16 +175,17 @@ class WebSocketViewModel : ViewModel() {
     }
     
     fun disconnect() {
-        viewModelScope.launch {
-            stopKeepAlive()
-            stopConnectionHealthCheck()
-            webSocketClient?.close()
-            webSocketClient = null
-            _connectionState.value = ConnectionState.DISCONNECTED
-        }
+         viewModelScope.launch {
+             stopKeepAlive()
+             stopConnectionHealthCheck()
+             stopAcknowledgmentMonitoring()
+             webSocketClient?.close()
+             webSocketClient = null
+             _connectionState.value = ConnectionState.DISCONNECTED
+         }
     }
     
-    fun sendText(text: String) {
+    fun sendText(text: String, typingDelayMs: Int = 0) {
         if (_connectionState.value != ConnectionState.CONNECTED && 
             _connectionState.value != ConnectionState.AUTHENTICATED) {
             Log.w(TAG, "Cannot send text - not connected (state: ${_connectionState.value})")
@@ -188,10 +197,13 @@ class WebSocketViewModel : ViewModel() {
                 val message = JSONObject().apply {
                     put("command", "type")
                     put("text", text)
+                    if (typingDelayMs > 0) {
+                        put("delay_ms", typingDelayMs)
+                    }
                 }
                 
-                sendMessage(message.toString())
-                Log.d(TAG, "Sent text: $text")
+                 sendMessage(message.toString(), requiresAck = false) // Don't require ack to avoid infinite retries
+                 Log.d(TAG, "Sent text: $text (delay: ${typingDelayMs}ms)")
                 
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to send text", e)
@@ -214,8 +226,8 @@ class WebSocketViewModel : ViewModel() {
                     put("key", key)
                 }
                 
-                sendMessage(message.toString())
-                Log.d(TAG, "Sent key press: $key")
+                 sendMessage(message.toString(), requiresAck = false) // Disabled ack to avoid infinite retries
+                 Log.d(TAG, "Sent key press: $key")
                 
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to send key press", e)
@@ -238,8 +250,8 @@ class WebSocketViewModel : ViewModel() {
                     put("key", key)
                 }
                 
-                sendMessage(message.toString())
-                Log.d(TAG, "Sent key release: $key")
+                 sendMessage(message.toString(), requiresAck = false) // Disabled ack to avoid infinite retries
+                 Log.d(TAG, "Sent key release: $key")
                 
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to send key release", e)
@@ -262,8 +274,8 @@ class WebSocketViewModel : ViewModel() {
                     put("keys", keys)
                 }
                 
-                sendMessage(message.toString())
-                Log.d(TAG, "Sent hotkey: ${keys.joinToString("+")}")
+                 sendMessage(message.toString(), requiresAck = false) // Disabled ack to avoid infinite retries
+                 Log.d(TAG, "Sent hotkey: ${keys.joinToString("+")}")
                 
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to send hotkey", e)
@@ -286,8 +298,8 @@ class WebSocketViewModel : ViewModel() {
                     put("keys", keys)
                 }
                 
-                sendMessage(message.toString())
-                Log.d(TAG, "Sent key combo: ${keys.joinToString("+")}")
+                 sendMessage(message.toString(), requiresAck = false) // Disabled ack to avoid infinite retries
+                 Log.d(TAG, "Sent key combo: ${keys.joinToString("+")}")
                 
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to send key combo", e)
@@ -310,17 +322,17 @@ class WebSocketViewModel : ViewModel() {
                     put("command", "key_press")
                     put("key", key)
                 }
-                sendMessage(pressMessage.toString())
-                
-                // Small delay
-                kotlinx.coroutines.delay(50)
-                
-                // Send key release
-                val releaseMessage = JSONObject().apply {
-                    put("command", "key_release")
-                    put("key", key)
-                }
-                sendMessage(releaseMessage.toString())
+                 sendMessage(pressMessage.toString(), requiresAck = true) // Key commands require acknowledgment
+                 
+                 // Small delay
+                 kotlinx.coroutines.delay(50)
+                 
+                 // Send key release
+                 val releaseMessage = JSONObject().apply {
+                     put("command", "key_release")
+                     put("key", key)
+                 }
+                 sendMessage(releaseMessage.toString(), requiresAck = true) // Key commands require acknowledgment
                 
                 Log.d(TAG, "Sent key press and release: $key")
                 
@@ -401,7 +413,7 @@ class WebSocketViewModel : ViewModel() {
         keepAliveJob?.cancel()
         keepAliveJob = null
     }
-
+    
     private fun startConnectionHealthCheck() {
         stopConnectionHealthCheck() // Stop any existing health check job
         
@@ -493,51 +505,79 @@ class WebSocketViewModel : ViewModel() {
             
             val jsonObject = JSONObject(decryptedMessage)
             
+            // Handle specific message types first
             when (jsonObject.optString("type")) {
                 "handshake" -> handleHandshake(jsonObject)
                 "connection_status" -> handleConnectionStatus(jsonObject)
                 else -> {
-                    // Handle authentication responses
-                    val status = jsonObject.optString("status")
-                    when (status) {
-                        "success" -> {
-                            val successMessage = jsonObject.optString("message", "")
-                            when (successMessage) {
-                                "Authentication successful" -> {
-                                    Log.d(TAG, "Authentication successful - updating state to AUTHENTICATED")
-                                    sessionId = jsonObject.optString("session_id")
-                                    _connectionState.value = ConnectionState.AUTHENTICATED
-                                    _lastError.value = ""
-                                }
-                                "pong" -> {
-                                    Log.d(TAG, "Received pong response")
-                                    lastPongTime = System.currentTimeMillis()
-                                }
-                                else -> {
-                                    Log.d(TAG, "Received success message: $successMessage")
-                                }
-                            }
-                        }
-                        "error" -> {
-                            val errorMessage = jsonObject.optString("message", "Unknown error")
-                            val code = jsonObject.optString("code", "")
-                            Log.e(TAG, "Received error response: $errorMessage (code: $code)")
-                            _connectionState.value = ConnectionState.ERROR
-                            _lastError.value = errorMessage
-                        }
-                        else -> {
-                            // Handle regular message responses
-                            when (jsonObject.optString("message")) {
-                                "pong" -> {
-                                    Log.d(TAG, "Received pong response")
-                                    lastPongTime = System.currentTimeMillis()
-                                }
-                                else -> {
-                                    Log.d(TAG, "Received message: ${jsonObject.optString("message", "unknown")}")
-                                }
-                            }
-                        }
-                    }
+                     // Handle acknowledgment command first
+                     val command = jsonObject.optString("command", "")
+                     if (command == "ack") {
+                         // This is an acknowledgment from server - don't process further
+                         val ackMessageId = jsonObject.optString("ack_message_id", "")
+                         Log.d(TAG, "Received acknowledgment command for message: $ackMessageId")
+                         return
+                     }
+                     
+                     // Check for message acknowledgments (server responses that need our ack)
+                     val messageId = jsonObject.optString("message_id", "")
+                     val requiresAck = jsonObject.optBoolean("requires_ack", false)
+                     
+                     if (requiresAck && messageId.isNotEmpty()) {
+                         // Send acknowledgment back to server
+                         sendAcknowledgment(messageId)
+                     }
+                     
+                     // Handle responses to our messages (remove from pending)
+                     if (messageId.isNotEmpty() && pendingMessages.containsKey(messageId)) {
+                         Log.d(TAG, "Received response for our message: $messageId")
+                         pendingMessages.remove(messageId)
+                     }
+                     
+                     // Handle authentication responses
+                     val status = jsonObject.optString("status")
+                     when (status) {
+                         "success" -> {
+                             val successMessage = jsonObject.optString("message", "")
+                             when (successMessage) {
+                                 "Authentication successful" -> {
+                                     Log.d(TAG, "Authentication successful - updating state to AUTHENTICATED")
+                                     sessionId = jsonObject.optString("session_id")
+                                     _connectionState.value = ConnectionState.AUTHENTICATED
+                                     _lastError.value = ""
+                                 }
+                                 "pong" -> {
+                                     Log.d(TAG, "Received pong response")
+                                     lastPongTime = System.currentTimeMillis()
+                                 }
+                                 "Acknowledgment received" -> {
+                                     Log.d(TAG, "Server acknowledged our acknowledgment")
+                                 }
+                                 else -> {
+                                     Log.d(TAG, "Received success message: $successMessage")
+                                 }
+                             }
+                         }
+                         "error" -> {
+                             val errorMessage = jsonObject.optString("message", "Unknown error")
+                             val code = jsonObject.optString("code", "")
+                             Log.e(TAG, "Received error response: $errorMessage (code: $code)")
+                             _connectionState.value = ConnectionState.ERROR
+                             _lastError.value = errorMessage
+                         }
+                         else -> {
+                             // Handle regular message responses
+                             when (jsonObject.optString("message")) {
+                                 "pong" -> {
+                                     Log.d(TAG, "Received pong response")
+                                     lastPongTime = System.currentTimeMillis()
+                                 }
+                                 else -> {
+                                     Log.d(TAG, "Received message: ${jsonObject.optString("message", "unknown")}")
+                                 }
+                             }
+                         }
+                     }
                 }
             }
         } catch (e: Exception) {
@@ -725,21 +765,119 @@ class WebSocketViewModel : ViewModel() {
         }
     }
     
-    private suspend fun sendMessage(message: String) {
-        try {
-            // Don't encrypt authentication messages - they should be sent as plain text
-            val messageToSend = if (isEncryptionEnabled && _connectionState.value == ConnectionState.AUTHENTICATED) {
-                encryptMessage(message) ?: message
-            } else {
-                message
-            }
-            
-            webSocketClient?.send(messageToSend)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to send message", e)
-            throw e
-        }
-    }
+     private suspend fun sendMessage(message: String, requiresAck: Boolean = false) {
+         try {
+             val messageId = if (requiresAck) {
+                 java.util.UUID.randomUUID().toString()
+             } else null
+             
+             // Add message ID and acknowledgment flag if required
+             val messageToSend = if (requiresAck && messageId != null) {
+                 val jsonMessage = JSONObject(message)
+                 jsonMessage.put("message_id", messageId)
+                 jsonMessage.put("requires_ack", true)
+                 
+                 val messageWithAck = jsonMessage.toString()
+                 
+                 // Store for retry mechanism
+                 val pendingMessage = PendingMessage(
+                     messageId = messageId,
+                     message = messageWithAck,
+                     timestamp = System.currentTimeMillis(),
+                     requiresAck = true
+                 )
+                 pendingMessages[messageId] = pendingMessage
+                 
+                 // Start acknowledgment monitoring if not already running
+                 startAcknowledgmentMonitoring()
+                 
+                 messageWithAck
+             } else {
+                 message
+             }
+             
+             // Encrypt if needed
+             val finalMessage = if (isEncryptionEnabled && _connectionState.value == ConnectionState.AUTHENTICATED) {
+                 encryptMessage(messageToSend) ?: messageToSend
+             } else {
+                 messageToSend
+             }
+             
+             webSocketClient?.send(finalMessage)
+             Log.d(TAG, "Message sent${if (requiresAck) " (requires ack: $messageId)" else ""}")
+             
+         } catch (e: Exception) {
+             Log.e(TAG, "Failed to send message", e)
+             throw e
+         }
+     }
+     
+     private suspend fun sendAcknowledgment(messageId: String) {
+         try {
+             val ackMessage = JSONObject().apply {
+                 put("command", "ack")
+                 put("ack_message_id", messageId)
+             }
+             
+             sendMessage(ackMessage.toString(), requiresAck = false)
+             Log.d(TAG, "Sent acknowledgment for message: $messageId")
+         } catch (e: Exception) {
+             Log.e(TAG, "Failed to send acknowledgment", e)
+         }
+     }
+     
+     private fun startAcknowledgmentMonitoring() {
+         if (acknowledgmentJob?.isActive == true) return
+         
+         acknowledgmentJob = viewModelScope.launch {
+             while (_connectionState.value == ConnectionState.AUTHENTICATED || 
+                    _connectionState.value == ConnectionState.CONNECTED) {
+                 delay(1000) // Check every second
+                 
+                 val currentTime = System.currentTimeMillis()
+                 val expiredMessages = pendingMessages.values.filter { 
+                     currentTime - it.timestamp > acknowledgmentTimeout 
+                 }
+                 
+                 for (expiredMessage in expiredMessages) {
+                     if (expiredMessage.retryCount < expiredMessage.maxRetries) {
+                         // Retry the message
+                         val retryMessage = expiredMessage.copy(
+                             retryCount = expiredMessage.retryCount + 1,
+                             timestamp = currentTime
+                         )
+                         pendingMessages[expiredMessage.messageId] = retryMessage
+                         
+                         try {
+                             val finalMessage = if (isEncryptionEnabled && _connectionState.value == ConnectionState.AUTHENTICATED) {
+                                 encryptMessage(expiredMessage.message) ?: expiredMessage.message
+                             } else {
+                                 expiredMessage.message
+                             }
+                             
+                             webSocketClient?.send(finalMessage)
+                             Log.w(TAG, "Retrying message ${expiredMessage.messageId} (attempt ${retryMessage.retryCount})")
+                         } catch (e: Exception) {
+                             Log.e(TAG, "Failed to retry message ${expiredMessage.messageId}", e)
+                         }
+                     } else {
+                         // Max retries reached, remove from pending
+                         pendingMessages.remove(expiredMessage.messageId)
+                         Log.e(TAG, "Message ${expiredMessage.messageId} failed after ${expiredMessage.maxRetries} retries")
+                         
+                         // Optionally notify user of failed message
+                         _lastError.value = "Message delivery failed after retries"
+                     }
+                 }
+             }
+         }
+     }
+     
+     private fun stopAcknowledgmentMonitoring() {
+         acknowledgmentJob?.cancel()
+         acknowledgmentJob = null
+         pendingMessages.clear()
+     }
     
     private suspend fun startAutoReconnection() {
         reconnectionJob?.cancel()

@@ -12,8 +12,8 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -27,16 +27,21 @@ import androidx.navigation.compose.rememberNavController
 import com.example.virtualkeyboard.screens.HomeScreen
 import com.example.virtualkeyboard.screens.ProfileScreen
 import com.example.virtualkeyboard.screens.QRScannerScreen
+import com.example.virtualkeyboard.viewmodel.PreferencesViewModel
 import com.example.virtualkeyboard.viewmodel.WebSocketViewModel
 
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
     object Home : Screen("home", "Home", Icons.Filled.Home)
-    object Profile : Screen("profile", "Profile", Icons.Filled.Person)
+    object Profile : Screen("profile", "Settings", Icons.Filled.Person)
     object QRScanner : Screen("qr_scanner", "Scanner", Icons.Filled.QrCodeScanner)
 }
 
 @Composable
-fun AppNavigation() {
+fun AppNavigation(
+    preferencesViewModel: PreferencesViewModel,
+    autoConnect: Boolean = false,
+    lastServerUrl: String = ""
+) {
     val navController = rememberNavController()
     val webSocketViewModel: WebSocketViewModel = viewModel()
     val screens = listOf(
@@ -44,6 +49,13 @@ fun AppNavigation() {
         Screen.QRScanner,
         Screen.Profile
     )
+    
+    // Auto-connect on app launch if enabled and we have a saved server URL
+    LaunchedEffect(autoConnect, lastServerUrl) {
+        if (autoConnect && lastServerUrl.isNotBlank()) {
+            webSocketViewModel.connectToServer(lastServerUrl)
+        }
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -60,13 +72,13 @@ fun AppNavigation() {
             modifier = Modifier.padding(innerPadding)
         ) {
             composable(Screen.Home.route) {
-                HomeScreen(navController, webSocketViewModel)
+                HomeScreen(navController, webSocketViewModel, preferencesViewModel)
             }
             composable(Screen.Profile.route) {
-                ProfileScreen(navController)
+                ProfileScreen(navController, preferencesViewModel)
             }
             composable(Screen.QRScanner.route) {
-                QRScannerScreen(navController, webSocketViewModel)
+                QRScannerScreen(navController, webSocketViewModel, preferencesViewModel)
             }
         }
     }
@@ -109,4 +121,4 @@ fun BottomNavigationBar(
             )
         }
     }
-} 
+}

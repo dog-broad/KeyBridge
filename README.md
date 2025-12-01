@@ -6,42 +6,55 @@ A modern Android application that allows you to remotely control your computer's
 
 ### 🎨 Modern UI/UX
 - **Material Design 3** with dynamic color theming
-- **Light/Dark theme** support with system preference detection
-- **Smooth animations** and responsive design
+- **Light/Dark theme** support with manual toggle
+- **Smooth animations** including pulse indicators and press effects
 - **Minimalist layout** with intuitive navigation
 - **Accessibility support** with proper content descriptions
 
-### ⌨️ Keyboard Control
+### ⌨️ Comprehensive Keyboard Control
 - **Text Input**: Send any text directly to your computer
-- **Special Keys**: Ctrl, Alt, Shift, Tab, Enter, Space, Backspace, Delete, Escape
+- **Modifier Keys**: Ctrl, Alt, Shift, Win/Cmd
+- **Navigation Keys**: Arrow keys, Home, End, Page Up/Down, Insert
+- **Action Keys**: Tab, Enter, Space, Backspace, Delete, Escape
 - **Function Keys**: F1-F12 support
-- **Common Hotkeys**: Copy (Ctrl+C), Paste (Ctrl+V), Cut (Ctrl+X), Undo (Ctrl+Z), Select All (Ctrl+A), Alt+Tab
-- **Real-time feedback** with button press animations
+- **System Keys**: Caps Lock, Num Lock, Scroll Lock, Menu, Pause
+- **Media Controls**: Play/Pause, Next/Previous Track, Volume Up/Down/Mute
+- **Print Screen**: Screenshot support
+- **Common Hotkeys**: Copy, Paste, Cut, Undo, Redo, Select All, Save, Find, Alt+Tab
 
-### 📱 QR Code Connection
-- **Camera-based QR scanning** using ML Kit
-- **Automatic connection** to WebSocket server
-- **Easy pairing** between phone and computer
-- **Connection status indicators** with visual feedback
+### 🔐 Secure Connection
+- **AES-256-GCM Encryption** for all communications
+- **Token-based Authentication** with QR code setup
+- **PBKDF2 Key Derivation** with 100,000 iterations
+- **Session Management** with automatic keep-alive
+
+### 📱 Easy Setup
+- **QR Code Scanning** using ML Kit for instant connection
+- **Manual URL Entry** as fallback option
+- **Auto-Connect** to last server on app launch
+- **Quick Reconnect** button when disconnected
+- **Connection status** with real-time visual feedback
 
 ### ⚙️ Customizable Settings
-- **Key repeat rate** adjustment
-- **Typing delay** configuration
-- **Haptic feedback** toggle
-- **Auto-connect** to last server
-- **User preferences** persistence
+- **Haptic Feedback** toggle for tactile response
+- **Key Repeat Rate** adjustment (0.5x - 2.0x)
+- **Typing Delay** configuration (0-200ms)
+- **Auto-Connect** toggle for startup behavior
+- **Last Server** memory with clear option
+- **Reset All Settings** with confirmation
 
 ## Prerequisites
 
 ### Android Requirements
 - Android 7.0 (API level 24) or higher
 - Camera permission for QR code scanning
-- Internet access for WebSocket connection
+- Vibration permission for haptic feedback
+- Internet/WiFi access for WebSocket connection
 
 ### Server Requirements
 Make sure you have the Virtual Keyboard Server running on your computer:
 - Python 3.8 or higher
-- Required Python packages (see server documentation)
+- Required Python packages: `websockets`, `pynput`, `qrcode`, `cryptography`
 
 ## Installation
 
@@ -65,7 +78,7 @@ cd VirtualKeyboard
 
 ### 1. Set Up the Server
 1. Start the Virtual Keyboard Server on your computer
-2. The server will display a QR code containing the WebSocket URL
+2. The server will display a QR code containing connection data
 3. Make sure your phone and computer are on the same network
 
 ### 2. Connect the App
@@ -76,135 +89,129 @@ cd VirtualKeyboard
 5. Tap "Connect" when the QR code is detected
 
 ### 3. Start Controlling
-Once connected, you can:
-- Type text in the text input field and tap "Send"
-- Use special keys like Ctrl, Alt, Shift
-- Press function keys F1-F12
-- Use common hotkeys for copy, paste, etc.
+Once connected (indicated by pulsing green WiFi icon):
+- Type text in the input field and tap "Send"
+- Use modifier keys, navigation, and action keys
+- Control media playback with media keys
+- Use quick actions for common hotkeys
 
 ## App Architecture
 
 ### Technology Stack
 - **Kotlin** - Primary programming language
-- **Jetpack Compose** - Modern UI toolkit
-- **Material Design 3** - Design system
-- **CameraX** - Camera functionality
-- **ML Kit** - QR code detection
-- **WebSocket** - Real-time communication
-- **StateFlow** - Reactive state management
-- **MVVM Architecture** - Clean code organization
+- **Jetpack Compose** - Modern declarative UI toolkit
+- **Material Design 3** - Latest design system with dynamic theming
+- **CameraX** - Camera functionality for QR scanning
+- **ML Kit** - Google's machine learning for barcode detection
+- **Java-WebSocket** - WebSocket client implementation
+- **StateFlow/ViewModel** - Reactive state management
+- **MVVM Architecture** - Clean separation of concerns
 
 ### Project Structure
 ```
 app/src/main/java/com/example/virtualkeyboard/
-├── navigation/          # Navigation components
-├── screens/            # UI screens (Home, QR Scanner, Profile)
-├── ui/theme/          # Material Design theming
-├── viewmodel/         # ViewModels for state management
-└── MainActivity.kt    # Main activity
+├── navigation/          # Navigation graph and bottom bar
+├── screens/
+│   ├── HomeScreen.kt    # Main keyboard controls
+│   ├── QRScannerScreen.kt # QR/manual connection
+│   └── ProfileScreen.kt  # Settings and about
+├── ui/theme/           # Material 3 theming
+│   ├── Color.kt
+│   ├── Theme.kt
+│   └── Type.kt
+├── viewmodel/
+│   ├── WebSocketViewModel.kt    # Connection & messaging
+│   └── PreferencesViewModel.kt  # User settings
+└── MainActivity.kt    # App entry point
 ```
 
-## Configuration
+## Communication Protocol
 
-### WebSocket Protocol
-The app communicates with the server using JSON messages:
-
-```json
-{
-  "type": "text",
-  "content": "Hello World"
-}
-```
+### Message Format
+All messages use JSON format with AES-256-GCM encryption after authentication:
 
 ```json
-{
-  "type": "key",
-  "key": "ctrl",
-  "action": "press"
-}
-```
+// Text input
+{"command": "type", "text": "Hello World"}
 
-```json
-{
-  "type": "hotkey",
-  "keys": "ctrl+c"
-}
+// Key press/release
+{"command": "key_press", "key": "ctrl"}
+{"command": "key_release", "key": "ctrl"}
+
+// Key combination (e.g., Ctrl+C)
+{"command": "key_combo", "keys": ["ctrl", "c"]}
+
+// Keep-alive ping
+{"command": "ping", "timestamp": 1701234567890}
 ```
 
 ### Supported Key Codes
-- Special keys: `ctrl`, `alt`, `shift`, `tab`, `enter`, `space`, `backspace`, `delete`, `escape`
-- Function keys: `f1`, `f2`, ..., `f12`
-- Alphanumeric keys: `a-z`, `0-9`
-- Common combinations: `ctrl+c`, `ctrl+v`, `alt+tab`, etc.
-
-## Customization
-
-### Theme Configuration
-The app supports dynamic theming and follows Material Design 3 guidelines. You can customize colors in:
-- `ui/theme/Color.kt` - Color definitions
-- `ui/theme/Theme.kt` - Theme configuration
-
-### Adding New Keys
-To add new keyboard shortcuts:
-1. Define the key in `KeyboardKey` data class
-2. Add it to the appropriate key list in `HomeScreen.kt`
-3. Update the server to handle the new key code
+| Category | Keys |
+|----------|------|
+| Modifiers | `ctrl`, `alt`, `shift`, `cmd` |
+| Navigation | `up`, `down`, `left`, `right`, `home`, `end`, `page_up`, `page_down` |
+| Actions | `tab`, `enter`, `space`, `backspace`, `delete`, `esc`, `insert` |
+| Function | `f1` - `f12` |
+| System | `caps_lock`, `num_lock`, `scroll_lock`, `menu`, `pause`, `print_screen` |
+| Media | `media_play_pause`, `media_next`, `media_previous`, `media_volume_up`, `media_volume_down`, `media_volume_mute` |
 
 ## Troubleshooting
 
 ### Connection Issues
-- Ensure both devices are on the same network
-- Check firewall settings on the computer
-- Verify the server is running and accessible
-- Try manually entering the WebSocket URL
+- Ensure both devices are on the same WiFi network
+- Check firewall settings on the computer (allow port 8765)
+- Verify the server is running and displays the QR code
+- Try using manual URL entry: `ws://YOUR_PC_IP:8765`
+- Check if authentication token hasn't expired (regenerate QR code)
 
-### Camera/QR Scanner Issues
-- Grant camera permission in Android settings
-- Ensure good lighting when scanning
-- Hold the camera steady and at appropriate distance
-- Try scanning the QR code again if detection fails
+### QR Scanner Issues
+- Grant camera permission in Android Settings > Apps
+- Ensure adequate lighting when scanning
+- Hold the camera steady at ~15-30cm distance
+- Make sure the QR code is fully visible in the frame
+
+### Keys Not Working
+- Verify connection status shows "Ready ✓"
+- Check that the server window is active/focused
+- Some keys may require administrator privileges on the server
+- Media keys depend on OS-level support
 
 ### Performance Issues
 - Close other apps to free up memory
-- Restart the app if it becomes unresponsive
-- Check network connectivity and signal strength
+- Check network signal strength
+- Reduce typing delay in settings for faster response
+- Enable haptic feedback for better tactile confirmation
 
 ## Contributing
 
-We welcome contributions! Please follow these steps:
+We welcome contributions! Please:
 1. Fork the repository
-2. Create a feature branch
-3. Make your changes
+2. Create a feature branch (`git checkout -b feature/amazing`)
+3. Make your changes with proper commit messages
 4. Add tests if applicable
 5. Submit a pull request
 
 ### Code Style
 - Follow Kotlin coding conventions
 - Use meaningful variable and function names
-- Add comments for complex logic
+- Add KDoc comments for public APIs
 - Ensure proper error handling
 
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Support
-
-For support and questions:
-- Create an issue on GitHub
-- Check the troubleshooting section
-- Review the server documentation
-
 ## Changelog
 
 ### Version 1.0.0
-- Initial release
-- Basic keyboard control functionality
-- QR code connection system
-- Material Design 3 UI
-- Light/Dark theme support
-- Customizable settings
+- Initial release with full keyboard control
+- QR code and manual connection
+- AES-256-GCM encrypted communication
+- Media controls and system keys
+- Auto-connect and quick reconnect
+- Material Design 3 UI with dark/light themes
+- Haptic feedback and customizable settings
 
 ---
 
-**Note**: This app requires the corresponding Virtual Keyboard Server to be running on your computer. Make sure to set up the server before using the mobile app. 
+**Note**: This app requires the corresponding Virtual Keyboard Server to be running on your computer. Make sure to set up the server before using the mobile app.

@@ -30,10 +30,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
+import com.example.virtualkeyboard.viewmodel.PreferencesViewModel
 import com.example.virtualkeyboard.viewmodel.WebSocketViewModel
-import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import androidx.compose.ui.graphics.Color
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -43,7 +42,8 @@ import com.google.mlkit.vision.common.InputImage
 @Composable
 fun QRScannerScreen(
     navController: NavHostController,
-    webSocketViewModel: WebSocketViewModel
+    webSocketViewModel: WebSocketViewModel,
+    preferencesViewModel: PreferencesViewModel
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -77,6 +77,18 @@ fun QRScannerScreen(
         }
     }
     
+    // Function to handle connection
+    fun connectToServer(url: String) {
+        isProcessing = true
+        // Save the server URL for auto-connect
+        preferencesViewModel.setLastServerUrl(url)
+        webSocketViewModel.connectToServer(url)
+        // Navigate back to home after connection attempt
+        navController.navigate("home") {
+            popUpTo("home") { inclusive = true }
+        }
+    }
+    
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -88,7 +100,8 @@ fun QRScannerScreen(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.primaryContainer
-            )
+            ),
+            shape = RoundedCornerShape(16.dp)
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
@@ -102,13 +115,13 @@ fun QRScannerScreen(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "QR Code Scanner",
+                    text = "Connect to Server",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
                 Text(
-                    text = "Scan the QR code from your computer to connect",
+                    text = "Scan QR code or enter URL manually",
                     style = MaterialTheme.typography.bodyMedium,
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
@@ -174,7 +187,7 @@ fun QRScannerScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            shape = RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(16.dp)
         ) {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -188,12 +201,7 @@ fun QRScannerScreen(
                             isProcessing = isProcessing,
                             onConnect = {
                                 if (manualUrl.isNotBlank()) {
-                                    isProcessing = true
-                                    webSocketViewModel.connectToServer(manualUrl)
-                                    // Navigate back to home after connection attempt
-                                    navController.navigate("home") {
-                                        popUpTo("home") { inclusive = true }
-                                    }
+                                    connectToServer(manualUrl)
                                 }
                             }
                         )
@@ -210,12 +218,7 @@ fun QRScannerScreen(
                             url = detectedUrl,
                             isProcessing = isProcessing,
                             onConnect = {
-                                isProcessing = true
-                                webSocketViewModel.connectToServer(detectedUrl)
-                                // Navigate back to home after connection attempt
-                                navController.navigate("home") {
-                                    popUpTo("home") { inclusive = true }
-                                }
+                                connectToServer(detectedUrl)
                             },
                             onScanAgain = {
                                 qrCodeDetected = false
@@ -239,28 +242,27 @@ fun QRScannerScreen(
         
         // Instructions
         Card(
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp)
         ) {
             Column(
                 modifier = Modifier.padding(16.dp)
             ) {
                 Text(
-                    text = "Instructions",
+                    text = "How to Connect",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = if (showManualConnection) {
-                        "1. Run the Virtual Keyboard Server on your computer\n" +
-                        "2. Note the WebSocket URL displayed (usually ws://YOUR_IP:8765)\n" +
-                        "3. Enter the URL in the field above\n" +
-                        "4. Tap Connect to establish connection"
+                        "1. Run the Virtual Keyboard Server on your PC\n" +
+                        "2. Note the WebSocket URL (usually ws://YOUR_IP:8765)\n" +
+                        "3. Enter the URL above and tap Connect"
                     } else {
-                        "1. Run the Virtual Keyboard Server on your computer\n" +
-                        "2. A QR code will be displayed on your computer screen\n" +
-                        "3. Point your phone camera at the QR code\n" +
-                        "4. The app will automatically connect to your computer"
+                        "1. Run the Virtual Keyboard Server on your PC\n" +
+                        "2. A QR code will appear on your screen\n" +
+                        "3. Point your camera at the QR code"
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -274,7 +276,8 @@ fun QRScannerScreen(
 fun PermissionRequestContent(onRequestPermission: () -> Unit) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = Modifier.padding(24.dp)
     ) {
         Icon(
             imageVector = Icons.Filled.CameraAlt,
@@ -289,13 +292,14 @@ fun PermissionRequestContent(onRequestPermission: () -> Unit) {
             textAlign = TextAlign.Center
         )
         Text(
-            text = "This app needs camera access to scan QR codes for connection setup.",
+            text = "We need camera access to scan QR codes for quick connection setup.",
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Button(
-            onClick = onRequestPermission
+            onClick = onRequestPermission,
+            shape = RoundedCornerShape(12.dp)
         ) {
             Icon(
                 imageVector = Icons.Filled.CameraAlt,
@@ -303,10 +307,11 @@ fun PermissionRequestContent(onRequestPermission: () -> Unit) {
                 modifier = Modifier.size(18.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Grant Camera Permission")
+            Text("Grant Permission")
         }
     }
 }
+
 @Composable
 fun QRCodeDetectedContent(
     url: String,
@@ -314,13 +319,12 @@ fun QRCodeDetectedContent(
     onConnect: () -> Unit,
     onScanAgain: () -> Unit
 ) {
-    // Use a ScrollableColumn to allow scrolling if content exceeds screen height
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier
-            .padding(16.dp)
-            .fillMaxHeight() // Ensure it fills the height for better scrolling experience
+            .padding(24.dp)
+            .fillMaxHeight()
     ) {
         Icon(
             imageVector = Icons.Filled.CheckCircle,
@@ -330,7 +334,7 @@ fun QRCodeDetectedContent(
         )
         
         Text(
-            text = "QR Code Detected!",
+            text = "Server Found!",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary
@@ -340,13 +344,14 @@ fun QRCodeDetectedContent(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
+            ),
+            shape = RoundedCornerShape(12.dp)
         ) {
             Column(
                 modifier = Modifier.padding(12.dp)
             ) {
                 Text(
-                    text = "Server URL:",
+                    text = "Server URL",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -354,11 +359,13 @@ fun QRCodeDetectedContent(
                     text = url,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
-                    maxLines = 1, // Limit to one line
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis // Handle overflow
+                    maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
             }
         }
+        
+        Spacer(modifier = Modifier.height(8.dp))
         
         Row(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -367,7 +374,8 @@ fun QRCodeDetectedContent(
             OutlinedButton(
                 onClick = onScanAgain,
                 enabled = !isProcessing,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp)
             ) {
                 Icon(
                     imageVector = Icons.Filled.QrCodeScanner,
@@ -381,7 +389,8 @@ fun QRCodeDetectedContent(
             Button(
                 onClick = onConnect,
                 enabled = !isProcessing,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp)
             ) {
                 if (isProcessing) {
                     CircularProgressIndicator(
@@ -471,9 +480,10 @@ fun CameraPreview(
                 containerColor = Color.Transparent
             ),
             border = CardDefaults.outlinedCardBorder().copy(
-                width = 2.dp,
+                width = 3.dp,
                 brush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary)
-            )
+            ),
+            shape = RoundedCornerShape(16.dp)
         ) {}
         
         Column(
@@ -571,12 +581,12 @@ fun ManualConnectionContent(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = Modifier.padding(16.dp)
+        modifier = Modifier.padding(24.dp)
     ) {
         Icon(
             imageVector = Icons.Filled.Link,
             contentDescription = null,
-            modifier = Modifier.size(64.dp),
+            modifier = Modifier.size(56.dp),
             tint = MaterialTheme.colorScheme.primary
         )
         
@@ -598,27 +608,26 @@ fun ManualConnectionContent(
             value = url,
             onValueChange = onUrlChange,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("WebSocket URL") },
+            label = { Text("Server URL") },
             placeholder = { Text("ws://192.168.1.100:8765") },
             enabled = !isProcessing,
             singleLine = true,
             leadingIcon = {
                 Icon(
-                    imageVector = Icons.Filled.Link,
+                    imageVector = Icons.Filled.Wifi,
                     contentDescription = null
                 )
-            }
+            },
+            shape = RoundedCornerShape(12.dp)
         )
         
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
         
         Button(
             onClick = onConnect,
             enabled = !isProcessing && url.isNotBlank(),
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary
-            )
+            shape = RoundedCornerShape(12.dp)
         ) {
             if (isProcessing) {
                 CircularProgressIndicator(
@@ -636,35 +645,35 @@ fun ManualConnectionContent(
             Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = if (isProcessing) "Connecting..." else "Connect",
-                style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium
             )
         }
         
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
         
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            ),
+            shape = RoundedCornerShape(12.dp)
         ) {
             Column(
                 modifier = Modifier.padding(12.dp)
             ) {
                 Text(
-                    text = "Common URLs:",
+                    text = "Example URLs",
                     style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "• ws://localhost:8765 (same device)\n• ws://192.168.1.XXX:8765 (local network)\n• ws://YOUR_IP:8765 (custom IP)",
+                    text = "• ws://192.168.1.XXX:8765\n• ws://10.0.0.XXX:8765\n• ws://YOUR_PC_IP:8765",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
     }
-} 
+}

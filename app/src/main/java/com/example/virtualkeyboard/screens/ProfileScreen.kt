@@ -3,6 +3,7 @@ package com.example.virtualkeyboard.screens
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Android
@@ -10,40 +11,43 @@ import androidx.compose.material.icons.filled.AppSettingsAlt
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.AutoMode
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.ui.platform.LocalContext
 import com.example.virtualkeyboard.viewmodel.PreferencesViewModel
-import com.example.virtualkeyboard.viewmodel.PreferencesViewModelFactory
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
-    navController: NavHostController,
-    preferencesViewModel: PreferencesViewModel = viewModel(
-        factory = PreferencesViewModelFactory(LocalContext.current)
-    )
+    @Suppress("UNUSED_PARAMETER") navController: NavHostController,
+    preferencesViewModel: PreferencesViewModel
 ) {
     val isDarkTheme by preferencesViewModel.isDarkTheme.collectAsState()
     val keyRepeatRate by preferencesViewModel.keyRepeatRate.collectAsState()
     val typingDelay by preferencesViewModel.typingDelay.collectAsState()
     val hapticFeedback by preferencesViewModel.hapticFeedback.collectAsState()
     val autoConnect by preferencesViewModel.autoConnect.collectAsState()
+    val lastServerUrl by preferencesViewModel.lastServerUrl.collectAsState()
+    
+    var showClearDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -52,8 +56,8 @@ fun ProfileScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Profile Header
-        ProfileHeader()
+        // App Header with branding
+        AppHeader()
         
         // Theme Settings
         ThemeSettingsCard(
@@ -74,49 +78,81 @@ fun ProfileScreen(
         // Connection Settings
         ConnectionSettingsCard(
             autoConnect = autoConnect,
-            onAutoConnectChange = { preferencesViewModel.setAutoConnect(it) }
+            onAutoConnectChange = { preferencesViewModel.setAutoConnect(it) },
+            lastServerUrl = lastServerUrl,
+            onClearLastServer = { preferencesViewModel.setLastServerUrl("") }
+        )
+        
+        // Danger Zone - Reset Settings
+        DangerZoneCard(
+            onResetClick = { showClearDialog = true }
         )
         
         // App Information
         AppInfoCard()
     }
+    
+    // Confirmation Dialog
+    if (showClearDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearDialog = false },
+            title = { Text("Reset All Settings?") },
+            text = { 
+                Text("This will reset all preferences to their default values. This action cannot be undone.") 
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        preferencesViewModel.clearPreferences()
+                        showClearDialog = false
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Reset")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
 @Composable
-fun ProfileHeader() {
+fun AppHeader() {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer
-        )
+        ),
+        shape = RoundedCornerShape(20.dp)
     ) {
         Column(
-            modifier = Modifier.padding(24.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Box(
-                modifier = Modifier
-                    .size(80.dp)
-                    .clip(CircleShape),
-                contentAlignment = Alignment.Center
+            // App Icon
+            Surface(
+                modifier = Modifier.size(72.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.primary
             ) {
-                Card(
+                Box(
                     modifier = Modifier.fillMaxSize(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Person,
-                            contentDescription = "Profile",
-                            modifier = Modifier.size(40.dp),
-                            tint = MaterialTheme.colorScheme.onPrimary
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.Filled.Keyboard,
+                        contentDescription = "App Icon",
+                        modifier = Modifier.size(40.dp),
+                        tint = MaterialTheme.colorScheme.onPrimary
+                    )
                 }
             }
             
@@ -130,11 +166,65 @@ fun ProfileHeader() {
             )
             
             Text(
-                text = "Remote Control App",
+                text = "Control your PC remotely",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
             )
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Quick Stats Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                QuickStat(
+                    icon = Icons.Filled.Security,
+                    label = "Encrypted",
+                    value = "AES-256"
+                )
+                QuickStat(
+                    icon = Icons.Filled.Speed,
+                    label = "Latency",
+                    value = "< 50ms"
+                )
+                QuickStat(
+                    icon = Icons.Filled.Wifi,
+                    label = "Protocol",
+                    value = "WebSocket"
+                )
+            }
         }
+    }
+}
+
+@Composable
+fun QuickStat(
+    icon: ImageVector,
+    label: String,
+    value: String
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onPrimaryContainer
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
+        )
     }
 }
 
@@ -144,7 +234,8 @@ fun ThemeSettingsCard(
     onThemeChange: (Boolean) -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp)
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -191,7 +282,8 @@ fun KeyboardSettingsCard(
     onHapticFeedbackChange: (Boolean) -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp)
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -213,59 +305,7 @@ fun KeyboardSettingsCard(
                 )
             }
             
-            // Key Repeat Rate
-            Column {
-                Text(
-                    text = "Key Repeat Rate",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Medium
-                )
-                Text(
-                    text = "Adjust how fast keys repeat when held down",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Slider(
-                    value = keyRepeatRate,
-                    onValueChange = onKeyRepeatRateChange,
-                    valueRange = 0.1f..2.0f,
-                    steps = 18
-                )
-                Text(
-                    text = "${String.format("%.1f", keyRepeatRate)}x",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-            
-            // Typing Delay
-            Column {
-                Text(
-                    text = "Typing Delay",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Medium
-                )
-                Text(
-                    text = "Delay between character input",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Slider(
-                    value = typingDelay,
-                    onValueChange = onTypingDelayChange,
-                    valueRange = 0f..500f,
-                    steps = 49
-                )
-                Text(
-                    text = "${typingDelay.toInt()}ms",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-            
-            // Haptic Feedback
+            // Haptic Feedback (most used setting first)
             SettingItem(
                 icon = Icons.Filled.Vibration,
                 title = "Haptic Feedback",
@@ -277,6 +317,90 @@ fun KeyboardSettingsCard(
                     )
                 }
             )
+            
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            
+            // Key Repeat Rate
+            Column {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Refresh,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Key Repeat Rate",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "Speed when holding keys",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Text(
+                        text = "${String.format("%.1f", keyRepeatRate)}x",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Slider(
+                    value = keyRepeatRate,
+                    onValueChange = onKeyRepeatRateChange,
+                    valueRange = 0.5f..2.0f,
+                    steps = 5,
+                    modifier = Modifier.padding(horizontal = 36.dp)
+                )
+            }
+            
+            // Typing Delay
+            Column {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Speed,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Typing Delay",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "Delay between characters",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Text(
+                        text = "${typingDelay.toInt()}ms",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Slider(
+                    value = typingDelay,
+                    onValueChange = onTypingDelayChange,
+                    valueRange = 0f..200f,
+                    steps = 19,
+                    modifier = Modifier.padding(horizontal = 36.dp)
+                )
+            }
         }
     }
 }
@@ -284,10 +408,13 @@ fun KeyboardSettingsCard(
 @Composable
 fun ConnectionSettingsCard(
     autoConnect: Boolean,
-    onAutoConnectChange: (Boolean) -> Unit
+    onAutoConnectChange: (Boolean) -> Unit,
+    lastServerUrl: String,
+    onClearLastServer: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp)
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -312,7 +439,7 @@ fun ConnectionSettingsCard(
             SettingItem(
                 icon = Icons.Filled.AutoMode,
                 title = "Auto-Connect",
-                description = if (autoConnect) "Automatically connect to last server" else "Manual connection required",
+                description = if (autoConnect) "Auto-connect to last server on app start" else "Manual connection required",
                 action = {
                     Switch(
                         checked = autoConnect,
@@ -320,6 +447,88 @@ fun ConnectionSettingsCard(
                     )
                 }
             )
+            
+            // Last Server Info
+            if (lastServerUrl.isNotBlank()) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Last Server",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = lastServerUrl,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                    }
+                    IconButton(onClick = onClearLastServer) {
+                        Icon(
+                            imageVector = Icons.Filled.Delete,
+                            contentDescription = "Clear last server",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DangerZoneCard(
+    onResetClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Delete,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "Reset",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+            
+            OutlinedButton(
+                onClick = onResetClick,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Refresh,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Reset All Settings")
+            }
         }
     }
 }
@@ -327,7 +536,8 @@ fun ConnectionSettingsCard(
 @Composable
 fun AppInfoCard() {
     Card(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp)
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -351,26 +561,20 @@ fun AppInfoCard() {
             
             InfoItem(
                 icon = Icons.Filled.AppSettingsAlt,
-                title = "App Version",
+                title = "Version",
                 description = "1.0.0"
             )
             
             InfoItem(
-                icon = Icons.Filled.Build,
-                title = "Build",
-                description = "Debug"
-            )
-            
-            InfoItem(
                 icon = Icons.Filled.Code,
-                title = "Framework",
-                description = "Jetpack Compose"
+                title = "Built with",
+                description = "Jetpack Compose • Material 3"
             )
             
             InfoItem(
-                icon = Icons.Filled.Android,
-                title = "Platform",
-                description = "Android"
+                icon = Icons.Filled.Security,
+                title = "Security",
+                description = "AES-256-GCM Encryption"
             )
         }
     }
@@ -378,7 +582,7 @@ fun AppInfoCard() {
 
 @Composable
 fun SettingItem(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     title: String,
     description: String,
     action: @Composable () -> Unit
@@ -417,7 +621,7 @@ fun SettingItem(
 
 @Composable
 fun InfoItem(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     title: String,
     description: String
 ) {
@@ -449,4 +653,4 @@ fun InfoItem(
             )
         }
     }
-} 
+}

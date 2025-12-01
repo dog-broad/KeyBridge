@@ -16,71 +16,77 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
+// Distinctive cyan-teal accent for a modern keyboard app aesthetic
+private val KeyboardCyan = Color(0xFF00BCD4)
+private val KeyboardCyanDark = Color(0xFF00ACC1)
+private val KeyboardTeal = Color(0xFF009688)
+private val KeyboardTealDark = Color(0xFF00897B)
+
 private val DarkColorScheme = darkColorScheme(
-    primary = PrimaryBlueDark,
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFF0D47A1),
-    onPrimaryContainer = Color(0xFFBBDEFB),
-    secondary = SecondaryGreenDark,
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFF2E7D32),
-    onSecondaryContainer = Color(0xFFC8E6C9),
+    primary = KeyboardCyanDark,
+    onPrimary = Color.Black,
+    primaryContainer = Color(0xFF004D56),
+    onPrimaryContainer = Color(0xFFB2EBF2),
+    secondary = KeyboardTealDark,
+    onSecondary = Color.Black,
+    secondaryContainer = Color(0xFF004D40),
+    onSecondaryContainer = Color(0xFFB2DFDB),
     tertiary = AccentPurple,
     onTertiary = Color.White,
     error = ErrorDark,
     onError = Color.Black,
     errorContainer = Color(0xFF93000A),
     onErrorContainer = ErrorDark,
-    background = BackgroundDark,
-    onBackground = Color(0xFFE6E1E5),
-    surface = SurfaceDark,
-    onSurface = Color(0xFFE6E1E5),
-    surfaceVariant = SurfaceVariantDark,
-    onSurfaceVariant = Color(0xFFCAC4D0),
-    outline = Color(0xFF938F99),
-    inverseOnSurface = Color(0xFF1C1B1F),
-    inverseSurface = Color(0xFFE6E1E5),
-    inversePrimary = PrimaryBlue,
-    surfaceTint = PrimaryBlueDark,
-    outlineVariant = Color(0xFF49454F),
+    background = Color(0xFF0D1117),
+    onBackground = Color(0xFFE6EDF3),
+    surface = Color(0xFF161B22),
+    onSurface = Color(0xFFE6EDF3),
+    surfaceVariant = Color(0xFF21262D),
+    onSurfaceVariant = Color(0xFF8B949E),
+    outline = Color(0xFF30363D),
+    inverseOnSurface = Color(0xFF0D1117),
+    inverseSurface = Color(0xFFE6EDF3),
+    inversePrimary = KeyboardCyan,
+    surfaceTint = KeyboardCyanDark,
+    outlineVariant = Color(0xFF30363D),
     scrim = Color.Black,
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = PrimaryBlue,
+    primary = KeyboardCyan,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFE3F2FD),
-    onPrimaryContainer = Color(0xFF0D47A1),
-    secondary = SecondaryGreen,
+    primaryContainer = Color(0xFFE0F7FA),
+    onPrimaryContainer = Color(0xFF006064),
+    secondary = KeyboardTeal,
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFE8F5E8),
-    onSecondaryContainer = Color(0xFF2E7D32),
+    secondaryContainer = Color(0xFFE0F2F1),
+    onSecondaryContainer = Color(0xFF004D40),
     tertiary = AccentPurple,
     onTertiary = Color.White,
     error = ErrorLight,
     onError = Color.White,
     errorContainer = Color(0xFFFFDAD6),
     onErrorContainer = Color(0xFF410002),
-    background = BackgroundLight,
-    onBackground = Color(0xFF1C1B1F),
-    surface = SurfaceLight,
-    onSurface = Color(0xFF1C1B1F),
-    surfaceVariant = SurfaceVariantLight,
-    onSurfaceVariant = Color(0xFF49454F),
-    outline = Color(0xFF79747E),
-    inverseOnSurface = Color(0xFFF4EFF4),
-    inverseSurface = Color(0xFF313033),
-    inversePrimary = Color(0xFF90CAF9),
-    surfaceTint = PrimaryBlue,
-    outlineVariant = Color(0xFFCAC4D0),
+    background = Color(0xFFF6F8FA),
+    onBackground = Color(0xFF24292F),
+    surface = Color(0xFFFFFFFF),
+    onSurface = Color(0xFF24292F),
+    surfaceVariant = Color(0xFFEFF2F5),
+    onSurfaceVariant = Color(0xFF57606A),
+    outline = Color(0xFFD0D7DE),
+    inverseOnSurface = Color(0xFFF6F8FA),
+    inverseSurface = Color(0xFF24292F),
+    inversePrimary = Color(0xFF80DEEA),
+    surfaceTint = KeyboardCyan,
+    outlineVariant = Color(0xFFD0D7DE),
     scrim = Color.Black,
 )
 
 @Composable
 fun VirtualKeyboardTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
+    // Set dynamicColor to false by default to use our custom theme
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
@@ -88,7 +94,6 @@ fun VirtualKeyboardTheme(
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-
         darkTheme -> DarkColorScheme
         else -> LightColorScheme
     }
@@ -96,8 +101,8 @@ fun VirtualKeyboardTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            window.statusBarColor = colorScheme.primary.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = darkTheme
+            window.statusBarColor = colorScheme.surface.toArgb()
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
         }
     }
 
