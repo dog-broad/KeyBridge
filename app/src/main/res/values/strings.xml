@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Virtual Keyboard</string>
+    <string name="app_name">KeyBridge</string>
     
     <!-- Navigation -->
     <string name="nav_home">Home</string>
@@ -32,7 +32,7 @@
     <string name="button_connect">Connect</string>
     <string name="button_connecting">Connecting…</string>
     <string name="instructions_title">Instructions</string>
-    <string name="instructions_text">1. Run the Virtual Keyboard Server on your computer\n2. A QR code will be displayed on your computer screen\n3. Point your phone camera at the QR code\n4. The app will automatically connect to your computer</string>
+    <string name="instructions_text">1. Run the KeyBridge Server on your computer\n2. A QR code will be displayed on your computer screen\n3. Point your phone camera at the QR code\n4. The app will automatically connect to your computer</string>
     <string name="scanning_frame_instruction">Position QR code within the frame</string>
     
     <!-- Profile Screen -->

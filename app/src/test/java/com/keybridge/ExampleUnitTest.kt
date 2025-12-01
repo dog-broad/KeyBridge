@@ -1,4 +1,4 @@
-package com.example.virtualkeyboard
+package com.keybridge
 
 import org.junit.Test
 

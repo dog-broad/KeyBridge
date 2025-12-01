@@ -1,4 +1,4 @@
-package com.example.virtualkeyboard.viewmodel
+package com.keybridge.viewmodel
 
 import android.util.Base64
 import android.util.Log
@@ -495,7 +495,7 @@ class WebSocketViewModel : ViewModel() {
             ConnectionData(
                 version = jsonObject.optString("version", "1.0"),
                 url = jsonObject.getString("url"),
-                protocol = jsonObject.optString("protocol", "virtual-keyboard-v1"),
+                protocol = jsonObject.optString("protocol", "keybridge-v1"),
                 auth = authData
             )
         } catch (e: Exception) {
@@ -509,7 +509,7 @@ class WebSocketViewModel : ViewModel() {
             ConnectionData(
                 version = "1.0",
                 url = url,
-                protocol = "virtual-keyboard-v1"
+                protocol = "keybridge-v1"
             )
         }
     }
@@ -683,9 +683,9 @@ class WebSocketViewModel : ViewModel() {
     private fun setupEncryption() {
         try {
             // Use the exact same key derivation as the server
-            // Server uses PBKDF2HMAC with SHA256, salt="virtual_keyboard_salt", 100000 iterations
-            val secretKey = "virtual-keyboard-secret-key-change-in-production"
-            val salt = "virtual_keyboard_salt"
+            // Server uses PBKDF2HMAC with SHA256, salt="keybridge_salt", 100000 iterations
+            val secretKey = "keybridge-secret-key-change-in-production"
+            val salt = "keybridge_salt"
             
             // Derive key using PBKDF2 (same as server)
             val derivedKey = deriveKey(secretKey, salt, 100000, 32)

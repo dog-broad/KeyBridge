@@ -1,4 +1,4 @@
-package com.example.virtualkeyboard.navigation
+package com.keybridge.navigation
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -24,11 +24,11 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.example.virtualkeyboard.screens.HomeScreen
-import com.example.virtualkeyboard.screens.ProfileScreen
-import com.example.virtualkeyboard.screens.QRScannerScreen
-import com.example.virtualkeyboard.viewmodel.PreferencesViewModel
-import com.example.virtualkeyboard.viewmodel.WebSocketViewModel
+import com.keybridge.screens.HomeScreen
+import com.keybridge.screens.ProfileScreen
+import com.keybridge.screens.QRScannerScreen
+import com.keybridge.viewmodel.PreferencesViewModel
+import com.keybridge.viewmodel.WebSocketViewModel
 
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
     object Home : Screen("home", "Home", Icons.Filled.Home)

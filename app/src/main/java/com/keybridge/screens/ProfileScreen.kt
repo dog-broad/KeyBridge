@@ -1,10 +1,14 @@
-package com.example.virtualkeyboard.screens
+package com.keybridge.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import com.keybridge.R
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.AppSettingsAlt
@@ -32,7 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
-import com.example.virtualkeyboard.viewmodel.PreferencesViewModel
+import com.keybridge.viewmodel.PreferencesViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -140,21 +144,21 @@ fun AppHeader() {
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // App Icon
+            // App Icon - KeyBridge Logo
             Surface(
-                modifier = Modifier.size(72.dp),
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.primary
+                modifier = Modifier.size(96.dp),
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surface
             ) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Keyboard,
-                        contentDescription = "App Icon",
-                        modifier = Modifier.size(40.dp),
-                        tint = MaterialTheme.colorScheme.onPrimary
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_keybridge_logo),
+                        contentDescription = "KeyBridge Logo",
+                        modifier = Modifier.size(80.dp),
+                        contentScale = ContentScale.Fit
                     )
                 }
             }
@@ -162,7 +166,7 @@ fun AppHeader() {
             Spacer(modifier = Modifier.height(16.dp))
             
             Text(
-                text = "Virtual Keyboard",
+                text = "KeyBridge",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onPrimaryContainer

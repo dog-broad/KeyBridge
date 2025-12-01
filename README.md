@@ -1,4 +1,4 @@
-# Virtual Keyboard Android App
+# KeyBridge Android App
 
 A modern Android application that allows you to remotely control your computer's keyboard through WebSocket communication. Built with Jetpack Compose and Material Design 3.
 
@@ -28,6 +28,8 @@ A modern Android application that allows you to remotely control your computer's
 - **PBKDF2 Key Derivation** with 100,000 iterations
 - **Session Management** with automatic keep-alive
 
+**⚠️ Security Note**: The app uses a default secret key for development. Ensure your server uses the same key or implement a secure key exchange mechanism for production use.
+
 ### 📱 Easy Setup
 - **QR Code Scanning** using ML Kit for instant connection
 - **Manual URL Entry** as fallback option
@@ -52,7 +54,7 @@ A modern Android application that allows you to remotely control your computer's
 - Internet/WiFi access for WebSocket connection
 
 ### Server Requirements
-Make sure you have the Virtual Keyboard Server running on your computer:
+Make sure you have the KeyBridge Server running on your computer:
 - Python 3.8 or higher
 - Required Python packages: `websockets`, `pynput`, `qrcode`, `cryptography`
 
@@ -70,19 +72,19 @@ Make sure you have the Virtual Keyboard Server running on your computer:
 
 ```bash
 git clone <repository-url>
-cd VirtualKeyboard
+cd KeyBridge
 ./gradlew assembleDebug
 ```
 
 ## Quick Start Guide
 
 ### 1. Set Up the Server
-1. Start the Virtual Keyboard Server on your computer
+1. Start the KeyBridge Server on your computer
 2. The server will display a QR code containing connection data
 3. Make sure your phone and computer are on the same network
 
 ### 2. Connect the App
-1. Open the Virtual Keyboard app on your Android device
+1. Open the KeyBridge app on your Android device
 2. Tap "Scan QR Code" on the home screen
 3. Grant camera permission when prompted
 4. Point your camera at the QR code displayed by the server
@@ -109,7 +111,7 @@ Once connected (indicated by pulsing green WiFi icon):
 
 ### Project Structure
 ```
-app/src/main/java/com/example/virtualkeyboard/
+app/src/main/java/com/keybridge/
 ├── navigation/          # Navigation graph and bottom bar
 ├── screens/
 │   ├── HomeScreen.kt    # Main keyboard controls
@@ -214,4 +216,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Note**: This app requires the corresponding Virtual Keyboard Server to be running on your computer. Make sure to set up the server before using the mobile app.
+**Note**: This app requires the corresponding KeyBridge Server to be running on your computer. Make sure to set up the server before using the mobile app.

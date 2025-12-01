@@ -1,4 +1,4 @@
-package com.example.virtualkeyboard.screens
+package com.keybridge.screens
 
 import android.Manifest
 import android.content.Context
@@ -47,9 +47,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
-import com.example.virtualkeyboard.viewmodel.PreferencesViewModel
-import com.example.virtualkeyboard.viewmodel.WebSocketViewModel
-import com.example.virtualkeyboard.viewmodel.WebSocketViewModel.ServerFeatures
+import com.keybridge.viewmodel.PreferencesViewModel
+import com.keybridge.viewmodel.WebSocketViewModel
+import com.keybridge.viewmodel.WebSocketViewModel.ServerFeatures
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 

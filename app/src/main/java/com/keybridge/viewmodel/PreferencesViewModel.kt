@@ -1,4 +1,4 @@
-package com.example.virtualkeyboard.viewmodel
+package com.keybridge.viewmodel
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 class PreferencesViewModel(private val context: Context) : ViewModel() {
     
     companion object {
-        private const val PREFS_NAME = "virtual_keyboard_prefs"
+        private const val PREFS_NAME = "keybridge_prefs"
         private const val KEY_DARK_THEME = "dark_theme"
         private const val KEY_REPEAT_RATE = "key_repeat_rate"
         private const val KEY_TYPING_DELAY = "typing_delay"

@@ -1,4 +1,4 @@
-package com.example.virtualkeyboard
+package com.keybridge
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -11,11 +11,11 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.virtualkeyboard.navigation.AppNavigation
-import com.example.virtualkeyboard.ui.theme.VirtualKeyboardTheme
-import com.example.virtualkeyboard.viewmodel.PreferencesViewModel
-import com.example.virtualkeyboard.viewmodel.PreferencesViewModelFactory
-import com.example.virtualkeyboard.viewmodel.WebSocketViewModel
+import com.keybridge.navigation.AppNavigation
+import com.keybridge.ui.theme.KeyBridgeTheme
+import com.keybridge.viewmodel.PreferencesViewModel
+import com.keybridge.viewmodel.PreferencesViewModelFactory
+import com.keybridge.viewmodel.WebSocketViewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -28,7 +28,7 @@ class MainActivity : ComponentActivity() {
             val autoConnect by preferencesViewModel.autoConnect.collectAsState()
             val lastServerUrl by preferencesViewModel.lastServerUrl.collectAsState()
             
-            VirtualKeyboardTheme(darkTheme = isDarkTheme) {
+            KeyBridgeTheme(darkTheme = isDarkTheme) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background

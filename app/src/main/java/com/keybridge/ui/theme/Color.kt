@@ -1,4 +1,4 @@
-package com.example.virtualkeyboard.ui.theme
+package com.keybridge.ui.theme
 
 import androidx.compose.ui.graphics.Color
 

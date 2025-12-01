@@ -1,4 +1,4 @@
-package com.example.virtualkeyboard.ui.theme
+package com.keybridge.ui.theme
 
 import android.app.Activity
 import android.os.Build
@@ -83,7 +83,7 @@ private val LightColorScheme = lightColorScheme(
 )
 
 @Composable
-fun VirtualKeyboardTheme(
+fun KeyBridgeTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     // Set dynamicColor to false by default to use our custom theme
     dynamicColor: Boolean = false,

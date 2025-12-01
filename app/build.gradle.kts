@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.virtualkeyboard"
+    namespace = "com.keybridge"
     compileSdk = 35 // Use the latest compileSdk
 
     defaultConfig {
-        applicationId = "com.example.virtualkeyboard"
+        applicationId = "com.keybridge"
         minSdk = 24
         targetSdk = 35 // Use the latest targetSdk
         versionCode = 1

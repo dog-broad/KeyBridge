@@ -1,4 +1,4 @@
-package com.example.virtualkeyboard.screens
+package com.keybridge.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -11,8 +11,12 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import com.keybridge.R
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
@@ -31,8 +35,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavHostController
-import com.example.virtualkeyboard.viewmodel.PreferencesViewModel
-import com.example.virtualkeyboard.viewmodel.WebSocketViewModel
+import com.keybridge.viewmodel.PreferencesViewModel
+import com.keybridge.viewmodel.WebSocketViewModel
 import java.util.concurrent.Executors
 import androidx.compose.ui.graphics.Color
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -109,15 +113,16 @@ fun QRScannerScreen(
                     .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(
-                    imageVector = Icons.Filled.QrCodeScanner,
-                    contentDescription = null,
-                    modifier = Modifier.size(48.dp),
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                // KeyBridge Logo
+                Image(
+                    painter = painterResource(id = R.drawable.ic_keybridge_logo),
+                    contentDescription = "KeyBridge Logo",
+                    modifier = Modifier.size(56.dp),
+                    contentScale = ContentScale.Fit
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "Connect to Server",
+                    text = "Connect to KeyBridge Server",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -263,11 +268,11 @@ fun QRScannerScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = if (showManualConnection) {
-                        "1. Run the Virtual Keyboard Server on your PC\n" +
+                        "1. Run the KeyBridge Server on your PC\n" +
                         "2. Note the WebSocket URL (usually ws://YOUR_IP:8765)\n" +
                         "3. Enter the URL above and tap Connect"
                     } else {
-                        "1. Run the Virtual Keyboard Server on your PC\n" +
+                        "1. Run the KeyBridge Server on your PC\n" +
                         "2. A QR code will appear on your screen\n" +
                         "3. Point your camera at the QR code"
                     },
@@ -333,7 +338,7 @@ fun QRCodeDetectedContent(
             mapOf(
                 "Server" to json.optString("url", ""),
                 "Version" to json.optString("version", "1.0"),
-                "Protocol" to json.optString("protocol", "virtual-keyboard-v1"),
+                "Protocol" to json.optString("protocol", "keybridge-v1"),
                 "Auth" to if (json.has("auth")) "Enabled" else "None"
             )
         } catch (e: Exception) {
