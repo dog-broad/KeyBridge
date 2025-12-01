@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import org.java_websocket.client.WebSocketClient
 import org.java_websocket.handshake.ServerHandshake
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URI
 import java.security.SecureRandom
@@ -105,13 +106,25 @@ class WebSocketViewModel : ViewModel() {
     
     fun connectToServer(qrData: String) {
         if (_connectionState.value == ConnectionState.CONNECTING || 
-            _connectionState.value == ConnectionState.CONNECTED) {
+            _connectionState.value == ConnectionState.CONNECTED ||
+            _connectionState.value == ConnectionState.AUTHENTICATED) {
             return
         }
         
         viewModelScope.launch {
             try {
+                // Close any existing connection first
+                webSocketClient?.close()
+                webSocketClient = null
+                
+                // Reset encryption state for fresh connection
+                isEncryptionEnabled = false
+                encryptionKey = null
+                _serverFeatures.value = ServerFeatures()
+                reconnectionAttempts = 0
+                
                 _connectionState.value = ConnectionState.CONNECTING
+                _lastError.value = ""
                 
                 // Parse connection data from QR code
                 connectionData = parseConnectionData(qrData)
@@ -179,9 +192,17 @@ class WebSocketViewModel : ViewModel() {
              stopKeepAlive()
              stopConnectionHealthCheck()
              stopAcknowledgmentMonitoring()
+             reconnectionJob?.cancel()
+             reconnectionJob = null
              webSocketClient?.close()
              webSocketClient = null
+             // Reset encryption state to prevent stale encryption on reconnect
+             isEncryptionEnabled = false
+             encryptionKey = null
+             connectionData = null
+             reconnectionAttempts = 0
              _connectionState.value = ConnectionState.DISCONNECTED
+             _serverFeatures.value = ServerFeatures()
          }
     }
     
@@ -269,12 +290,13 @@ class WebSocketViewModel : ViewModel() {
         
         viewModelScope.launch {
             try {
+                val keysArray = JSONArray(keys)
                 val message = JSONObject().apply {
                     put("command", "hotkey")
-                    put("keys", keys)
+                    put("keys", keysArray)
                 }
                 
-                 sendMessage(message.toString(), requiresAck = false) // Disabled ack to avoid infinite retries
+                 sendMessage(message.toString(), requiresAck = false)
                  Log.d(TAG, "Sent hotkey: ${keys.joinToString("+")}")
                 
             } catch (e: Exception) {
@@ -293,12 +315,13 @@ class WebSocketViewModel : ViewModel() {
         
         viewModelScope.launch {
             try {
+                val keysArray = JSONArray(keys)
                 val message = JSONObject().apply {
                     put("command", "key_combo")
-                    put("keys", keys)
+                    put("keys", keysArray)
                 }
                 
-                 sendMessage(message.toString(), requiresAck = false) // Disabled ack to avoid infinite retries
+                 sendMessage(message.toString(), requiresAck = false)
                  Log.d(TAG, "Sent key combo: ${keys.joinToString("+")}")
                 
             } catch (e: Exception) {
@@ -881,21 +904,39 @@ class WebSocketViewModel : ViewModel() {
     
     private suspend fun startAutoReconnection() {
         reconnectionJob?.cancel()
+        
+        // Don't reconnect if we're already connecting or connected
+        if (_connectionState.value == ConnectionState.CONNECTING ||
+            _connectionState.value == ConnectionState.CONNECTED ||
+            _connectionState.value == ConnectionState.AUTHENTICATED) {
+            return
+        }
+        
         reconnectionJob = viewModelScope.launch {
             while (_connectionState.value == ConnectionState.ERROR && reconnectionAttempts < maxRetryAttempts) {
-                val delay = baseReconnectionDelay * (1L shl reconnectionAttempts) // Exponential backoff
-                Log.d(TAG, "Attempting reconnection in ${delay}ms (attempt ${reconnectionAttempts + 1})")
+                reconnectionAttempts++
+                val delayTime = baseReconnectionDelay * (1L shl (reconnectionAttempts - 1)) // Exponential backoff
+                Log.d(TAG, "Attempting reconnection in ${delayTime}ms (attempt $reconnectionAttempts)")
                 
-                delay(delay)
+                delay(delayTime)
+                
+                // Check state again after delay
+                if (_connectionState.value != ConnectionState.ERROR) {
+                    Log.d(TAG, "Connection state changed, stopping reconnection")
+                    break
+                }
                 
                 try {
-                    connectionData?.url?.let { url ->
+                    val url = connectionData?.url ?: _serverUrl.value
+                    if (url.isNotBlank()) {
+                        // Reset state before reconnecting
+                        _connectionState.value = ConnectionState.DISCONNECTED
                         connectToServer(url)
                     }
                     break
                 } catch (e: Exception) {
-                    reconnectionAttempts++
                     Log.w(TAG, "Reconnection attempt failed", e)
+                    _connectionState.value = ConnectionState.ERROR
                 }
             }
             

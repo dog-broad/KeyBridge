@@ -20,6 +20,7 @@ class PreferencesViewModel(private val context: Context) : ViewModel() {
         private const val KEY_HAPTIC_FEEDBACK = "haptic_feedback"
         private const val KEY_AUTO_CONNECT = "auto_connect"
         private const val KEY_LAST_SERVER_URL = "last_server_url"
+        private const val KEY_MAC_MODE = "mac_mode"
     }
     
     private val sharedPrefs: SharedPreferences = 
@@ -57,6 +58,12 @@ class PreferencesViewModel(private val context: Context) : ViewModel() {
         sharedPrefs.getString(KEY_LAST_SERVER_URL, "") ?: ""
     )
     val lastServerUrl: StateFlow<String> = _lastServerUrl.asStateFlow()
+    
+    // Mac mode - use Mac-specific labels and hotkeys
+    private val _macMode = MutableStateFlow(
+        sharedPrefs.getBoolean(KEY_MAC_MODE, false)
+    )
+    val macMode: StateFlow<Boolean> = _macMode.asStateFlow()
     
     fun setDarkTheme(isDark: Boolean) {
         viewModelScope.launch {
@@ -100,6 +107,13 @@ class PreferencesViewModel(private val context: Context) : ViewModel() {
         }
     }
     
+    fun setMacMode(enabled: Boolean) {
+        viewModelScope.launch {
+            _macMode.value = enabled
+            sharedPrefs.edit().putBoolean(KEY_MAC_MODE, enabled).apply()
+        }
+    }
+    
     // Clear all preferences
     fun clearPreferences() {
         viewModelScope.launch {
@@ -112,6 +126,7 @@ class PreferencesViewModel(private val context: Context) : ViewModel() {
             _hapticFeedback.value = true
             _autoConnect.value = false
             _lastServerUrl.value = ""
+            _macMode.value = false
         }
     }
 }

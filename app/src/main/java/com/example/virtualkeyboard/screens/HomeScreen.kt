@@ -74,10 +74,17 @@ fun HomeScreen(
     val hapticFeedback by preferencesViewModel.hapticFeedback.collectAsState()
     val typingDelay by preferencesViewModel.typingDelay.collectAsState()
     val keyRepeatRate by preferencesViewModel.keyRepeatRate.collectAsState()
+    val macMode by preferencesViewModel.macMode.collectAsState()
     
     val isConnected = connectionState == WebSocketViewModel.ConnectionState.CONNECTED || 
                      connectionState == WebSocketViewModel.ConnectionState.AUTHENTICATED
     var textInput by remember { mutableStateOf("") }
+    
+    // Toggleable modifier keys state
+    var ctrlToggled by remember { mutableStateOf(false) }
+    var altToggled by remember { mutableStateOf(false) }
+    var shiftToggled by remember { mutableStateOf(false) }
+    var winToggled by remember { mutableStateOf(false) }
     
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -182,6 +189,32 @@ fun HomeScreen(
                 isConnected = isConnected,
                 viewModel = viewModel,
                 keyRepeatRate = keyRepeatRate,
+                macMode = macMode,
+                ctrlToggled = ctrlToggled,
+                altToggled = altToggled,
+                shiftToggled = shiftToggled,
+                winToggled = winToggled,
+                onModifierToggle = { modifier, toggled ->
+                    when (modifier) {
+                        "ctrl" -> {
+                            ctrlToggled = toggled
+                            if (toggled) viewModel.sendKeyPress("ctrl") else viewModel.sendKeyRelease("ctrl")
+                        }
+                        "alt" -> {
+                            altToggled = toggled
+                            if (toggled) viewModel.sendKeyPress("alt") else viewModel.sendKeyRelease("alt")
+                        }
+                        "shift" -> {
+                            shiftToggled = toggled
+                            if (toggled) viewModel.sendKeyPress("shift") else viewModel.sendKeyRelease("shift")
+                        }
+                        "cmd" -> {
+                            winToggled = toggled
+                            if (toggled) viewModel.sendKeyPress("cmd") else viewModel.sendKeyRelease("cmd")
+                        }
+                    }
+                    performHapticFeedback()
+                },
                 onKeyPress = { key -> 
                     if (isConnected) {
                         performHapticFeedback()
@@ -189,7 +222,26 @@ fun HomeScreen(
                             val keys = key.action.split("+")
                             viewModel.sendKeyCombo(keys)
                         } else {
-                            viewModel.sendKeyPressAndRelease(key.action)
+                            // Apply any toggled modifiers
+                            val modifiers = mutableListOf<String>()
+                            if (ctrlToggled) modifiers.add("ctrl")
+                            if (altToggled) modifiers.add("alt")
+                            if (shiftToggled) modifiers.add("shift")
+                            if (winToggled) modifiers.add("cmd")
+                            
+                            if (modifiers.isNotEmpty()) {
+                                // Send as key combo with modifiers
+                                val allKeys = modifiers + key.action
+                                viewModel.sendKeyCombo(allKeys)
+                                // Release all modifiers after combo
+                                ctrlToggled = false
+                                altToggled = false
+                                shiftToggled = false
+                                winToggled = false
+                                modifiers.forEach { viewModel.sendKeyRelease(it) }
+                            } else {
+                                viewModel.sendKeyPressAndRelease(key.action)
+                            }
                         }
                     }
                 },
@@ -247,13 +299,17 @@ fun ConnectionStatusCard(
         shape = RoundedCornerShape(16.dp)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxWidth()
             ) {
+                Spacer(modifier = Modifier.width(8.dp))
                 // Pulsing connection indicator
                 Box(contentAlignment = Alignment.Center) {
                     if (isConnected) {
@@ -274,6 +330,7 @@ fun ConnectionStatusCard(
                         modifier = Modifier.size(28.dp)
                     )
                 }
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = when (connectionState) {
                         WebSocketViewModel.ConnectionState.DISCONNECTED -> "Disconnected"
@@ -285,7 +342,8 @@ fun ConnectionStatusCard(
                     },
                     style = MaterialTheme.typography.titleMedium,
                     color = connectionColor,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
                 )
             }
             
@@ -517,17 +575,34 @@ fun KeyboardControlsSection(
     isConnected: Boolean,
     viewModel: WebSocketViewModel,
     keyRepeatRate: Float,
+    macMode: Boolean,
+    ctrlToggled: Boolean,
+    altToggled: Boolean,
+    shiftToggled: Boolean,
+    winToggled: Boolean,
+    onModifierToggle: (String, Boolean) -> Unit,
     onKeyPress: (KeyboardKey) -> Unit,
     onHapticFeedback: () -> Unit
 ) {
     // Calculate repeat interval based on rate (base 100ms, rate adjusts speed)
     val repeatIntervalMs = (100 / keyRepeatRate).toLong().coerceIn(50, 500)
-    val modifierKeys = listOf(
-        KeyboardKey("Ctrl", Icons.Filled.ControlCamera, "ctrl", true),
-        KeyboardKey("Alt", Icons.Filled.AlternateEmail, "alt", true),
-        KeyboardKey("Shift", Icons.Filled.KeyboardArrowUp, "shift", true),
-        KeyboardKey("Win", Icons.Filled.Window, "cmd", true)
-    )
+    
+    // Modifier keys are toggleable - labels change based on Mac mode
+    val modifierKeys = if (macMode) {
+        listOf(
+            Triple(KeyboardKey("⌃ Ctrl", Icons.Filled.ControlCamera, "ctrl", true), ctrlToggled, "ctrl"),
+            Triple(KeyboardKey("⌥ Opt", Icons.Filled.AlternateEmail, "alt", true), altToggled, "alt"),
+            Triple(KeyboardKey("⇧ Shift", Icons.Filled.KeyboardArrowUp, "shift", true), shiftToggled, "shift"),
+            Triple(KeyboardKey("⌘ Cmd", Icons.Filled.Window, "cmd", true), winToggled, "cmd")
+        )
+    } else {
+        listOf(
+            Triple(KeyboardKey("Ctrl", Icons.Filled.ControlCamera, "ctrl", true), ctrlToggled, "ctrl"),
+            Triple(KeyboardKey("Alt", Icons.Filled.AlternateEmail, "alt", true), altToggled, "alt"),
+            Triple(KeyboardKey("Shift", Icons.Filled.KeyboardArrowUp, "shift", true), shiftToggled, "shift"),
+            Triple(KeyboardKey("Win", Icons.Filled.Window, "cmd", true), winToggled, "cmd")
+        )
+    }
     
     val navigationKeys = listOf(
         KeyboardKey("↑", Icons.Filled.KeyboardArrowUp, "up", true),
@@ -538,26 +613,43 @@ fun KeyboardControlsSection(
         KeyboardKey("End", Icons.AutoMirrored.Filled.LastPage, "end", true)
     )
     
-    // Extended navigation keys
-    val extendedNavKeys = listOf(
-        KeyboardKey("PgUp", Icons.Filled.ExpandLess, "page_up", true),
-        KeyboardKey("PgDn", Icons.Filled.ExpandMore, "page_down", true),
-        KeyboardKey("Ins", Icons.Filled.Add, "insert", true),
-        KeyboardKey("PrtSc", Icons.Filled.Screenshot, "print_screen", true)
-    )
+    // Extended navigation keys - some don't exist on Mac
+    val extendedNavKeys = if (macMode) {
+        listOf(
+            KeyboardKey("PgUp", Icons.Filled.ExpandLess, "page_up", true),
+            KeyboardKey("PgDn", Icons.Filled.ExpandMore, "page_down", true),
+            KeyboardKey("Fn+Del", Icons.Filled.Delete, "delete", true),  // Mac: Fn+Delete = Forward Delete
+            KeyboardKey("⌘⇧3", Icons.Filled.Screenshot, "cmd+shift+3", true)  // Mac screenshot
+        )
+    } else {
+        listOf(
+            KeyboardKey("PgUp", Icons.Filled.ExpandLess, "page_up", true),
+            KeyboardKey("PgDn", Icons.Filled.ExpandMore, "page_down", true),
+            KeyboardKey("Ins", Icons.Filled.Add, "insert", true),
+            KeyboardKey("PrtSc", Icons.Filled.Screenshot, "print_screen", true)
+        )
+    }
     
-    // Lock and system keys
-    val systemKeys = listOf(
-        KeyboardKey("Caps", Icons.Filled.TextFields, "caps_lock", true),
-        KeyboardKey("Num", Icons.Filled.Pin, "num_lock", true),
-        KeyboardKey("Scroll", Icons.Filled.Lock, "scroll_lock", true),
-        KeyboardKey("Menu", Icons.Filled.Menu, "menu", true),
-        KeyboardKey("Pause", Icons.Filled.Pause, "pause", true)
-    )
+    // Lock and system keys - varies by platform
+    val systemKeys = if (macMode) {
+        listOf(
+            KeyboardKey("Caps", Icons.Filled.TextFields, "caps_lock", true),
+            KeyboardKey("Fn", Icons.Filled.Tune, "fn", true),
+            KeyboardKey("Globe", Icons.Filled.Language, "fn", true)  // Globe key on newer Macs
+        )
+    } else {
+        listOf(
+            KeyboardKey("Caps", Icons.Filled.TextFields, "caps_lock", true),
+            KeyboardKey("Num", Icons.Filled.Pin, "num_lock", true),
+            KeyboardKey("Scroll", Icons.Filled.Lock, "scroll_lock", true),
+            KeyboardKey("Menu", Icons.Filled.Menu, "menu", true),
+            KeyboardKey("Pause", Icons.Filled.Pause, "pause", true)
+        )
+    }
     
     val actionKeys = listOf(
         KeyboardKey("Tab", Icons.AutoMirrored.Filled.KeyboardTab, "tab", true),
-        KeyboardKey("Enter", Icons.AutoMirrored.Filled.KeyboardReturn, "enter", true),
+        KeyboardKey(if (macMode) "Return" else "Enter", Icons.AutoMirrored.Filled.KeyboardReturn, "enter", true),
         KeyboardKey("Space", Icons.Filled.SpaceBar, "space", true),
         KeyboardKey("⌫", Icons.AutoMirrored.Filled.Backspace, "backspace", true),
         KeyboardKey("Del", Icons.Filled.Delete, "delete", true),
@@ -578,17 +670,32 @@ fun KeyboardControlsSection(
         KeyboardKey("F$n", null, "f$n")
     }
 
-    val commonHotkeys = listOf(
-        KeyboardKey("Copy", Icons.Filled.ContentCopy, "ctrl+c", true),
-        KeyboardKey("Paste", Icons.Filled.ContentPaste, "ctrl+v", true),
-        KeyboardKey("Cut", Icons.Filled.ContentCut, "ctrl+x", true),
-        KeyboardKey("Undo", Icons.AutoMirrored.Filled.Undo, "ctrl+z", true),
-        KeyboardKey("Redo", Icons.AutoMirrored.Filled.Redo, "ctrl+y", true),
-        KeyboardKey("All", Icons.Filled.SelectAll, "ctrl+a", true),
-        KeyboardKey("Save", Icons.Filled.Save, "ctrl+s", true),
-        KeyboardKey("Find", Icons.Filled.Search, "ctrl+f", true),
-        KeyboardKey("Alt+Tab", Icons.Filled.SwapHoriz, "alt+tab", true)
-    )
+    // Common hotkeys - use Cmd on Mac, Ctrl on Windows/Linux
+    val commonHotkeys = if (macMode) {
+        listOf(
+            KeyboardKey("Copy", Icons.Filled.ContentCopy, "cmd+c", true),
+            KeyboardKey("Paste", Icons.Filled.ContentPaste, "cmd+v", true),
+            KeyboardKey("Cut", Icons.Filled.ContentCut, "cmd+x", true),
+            KeyboardKey("Undo", Icons.AutoMirrored.Filled.Undo, "cmd+z", true),
+            KeyboardKey("Redo", Icons.AutoMirrored.Filled.Redo, "cmd+shift+z", true),  // Mac uses Cmd+Shift+Z
+            KeyboardKey("All", Icons.Filled.SelectAll, "cmd+a", true),
+            KeyboardKey("Save", Icons.Filled.Save, "cmd+s", true),
+            KeyboardKey("Find", Icons.Filled.Search, "cmd+f", true),
+            KeyboardKey("Switch", Icons.Filled.SwapHoriz, "cmd+tab", true)  // Cmd+Tab on Mac
+        )
+    } else {
+        listOf(
+            KeyboardKey("Copy", Icons.Filled.ContentCopy, "ctrl+c", true),
+            KeyboardKey("Paste", Icons.Filled.ContentPaste, "ctrl+v", true),
+            KeyboardKey("Cut", Icons.Filled.ContentCut, "ctrl+x", true),
+            KeyboardKey("Undo", Icons.AutoMirrored.Filled.Undo, "ctrl+z", true),
+            KeyboardKey("Redo", Icons.AutoMirrored.Filled.Redo, "ctrl+y", true),
+            KeyboardKey("All", Icons.Filled.SelectAll, "ctrl+a", true),
+            KeyboardKey("Save", Icons.Filled.Save, "ctrl+s", true),
+            KeyboardKey("Find", Icons.Filled.Search, "ctrl+f", true),
+            KeyboardKey("Alt+Tab", Icons.Filled.SwapHoriz, "alt+tab", true)
+        )
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -614,15 +721,23 @@ fun KeyboardControlsSection(
                 )
             }
             
-            // Modifier Keys
-            KeySection(title = "Modifiers") {
-                KeyGridRow(
-                    keys = modifierKeys,
-                    isConnected = isConnected,
-                    onKeyPress = onKeyPress,
-                    repeatIntervalMs = repeatIntervalMs,
-                    onHapticFeedback = onHapticFeedback
-                )
+            // Modifier Keys (Toggleable)
+            KeySection(title = "Modifiers (tap to hold, tap again to release)") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    modifierKeys.forEach { (key, isToggled, modifierId) ->
+                        Box(modifier = Modifier.weight(1f)) {
+                            ToggleableKeyButton(
+                                key = key,
+                                isToggled = isToggled,
+                                onToggle = { onModifierToggle(modifierId, !isToggled) },
+                                enabled = isConnected
+                            )
+                        }
+                    }
+                }
             }
             
             // Navigation Keys
@@ -886,6 +1001,84 @@ fun KeyButton(
                     else 
                         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                 )
+            }
+        }
+    }
+}
+
+@Composable
+fun ToggleableKeyButton(
+    key: KeyboardKey,
+    isToggled: Boolean,
+    onToggle: () -> Unit,
+    enabled: Boolean
+) {
+    val scale by animateFloatAsState(
+        targetValue = if (isToggled) 0.95f else 1f,
+        animationSpec = spring(dampingRatio = 0.4f, stiffness = 400f),
+        label = "toggleScale"
+    )
+    
+    val backgroundColor by animateColorAsState(
+        targetValue = when {
+            !enabled -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            isToggled -> MaterialTheme.colorScheme.primary
+            else -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+        },
+        label = "toggleBackground"
+    )
+    
+    val contentColor by animateColorAsState(
+        targetValue = when {
+            !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+            isToggled -> MaterialTheme.colorScheme.onPrimary
+            else -> MaterialTheme.colorScheme.onSurface
+        },
+        label = "toggleContent"
+    )
+
+    Surface(
+        onClick = { if (enabled) onToggle() },
+        enabled = enabled,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .scale(scale),
+        shape = RoundedCornerShape(10.dp),
+        color = backgroundColor
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                if (key.icon != null) {
+                    Icon(
+                        imageVector = key.icon,
+                        contentDescription = key.label,
+                        modifier = Modifier.size(16.dp),
+                        tint = contentColor
+                    )
+                }
+                Text(
+                    text = key.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    textAlign = TextAlign.Center,
+                    fontWeight = if (isToggled) FontWeight.Bold else FontWeight.Medium,
+                    color = contentColor
+                )
+                if (isToggled) {
+                    Box(
+                        modifier = Modifier
+                            .padding(top = 2.dp)
+                            .size(4.dp)
+                            .clip(CircleShape)
+                            .background(contentColor)
+                    )
+                }
             }
         }
     }

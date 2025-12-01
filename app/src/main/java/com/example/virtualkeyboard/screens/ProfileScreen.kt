@@ -46,6 +46,7 @@ fun ProfileScreen(
     val hapticFeedback by preferencesViewModel.hapticFeedback.collectAsState()
     val autoConnect by preferencesViewModel.autoConnect.collectAsState()
     val lastServerUrl by preferencesViewModel.lastServerUrl.collectAsState()
+    val macMode by preferencesViewModel.macMode.collectAsState()
     
     var showClearDialog by remember { mutableStateOf(false) }
 
@@ -72,7 +73,9 @@ fun ProfileScreen(
             typingDelay = typingDelay,
             onTypingDelayChange = { preferencesViewModel.setTypingDelay(it) },
             hapticFeedback = hapticFeedback,
-            onHapticFeedbackChange = { preferencesViewModel.setHapticFeedback(it) }
+            onHapticFeedbackChange = { preferencesViewModel.setHapticFeedback(it) },
+            macMode = macMode,
+            onMacModeChange = { preferencesViewModel.setMacMode(it) }
         )
         
         // Connection Settings
@@ -279,7 +282,9 @@ fun KeyboardSettingsCard(
     typingDelay: Float,
     onTypingDelayChange: (Float) -> Unit,
     hapticFeedback: Boolean,
-    onHapticFeedbackChange: (Boolean) -> Unit
+    onHapticFeedbackChange: (Boolean) -> Unit,
+    macMode: Boolean,
+    onMacModeChange: (Boolean) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -305,7 +310,22 @@ fun KeyboardSettingsCard(
                 )
             }
             
-            // Haptic Feedback (most used setting first)
+            // Mac Mode Toggle
+            SettingItem(
+                icon = Icons.Filled.Keyboard,
+                title = "Mac Mode",
+                description = if (macMode) "Using ⌘ Cmd, ⌥ Option labels" else "Using Ctrl, Alt, Win labels",
+                action = {
+                    Switch(
+                        checked = macMode,
+                        onCheckedChange = onMacModeChange
+                    )
+                }
+            )
+            
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            
+            // Haptic Feedback
             SettingItem(
                 icon = Icons.Filled.Vibration,
                 title = "Haptic Feedback",

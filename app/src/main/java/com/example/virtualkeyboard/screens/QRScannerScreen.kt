@@ -104,7 +104,9 @@ fun QRScannerScreen(
             shape = RoundedCornerShape(16.dp)
         ) {
             Column(
-                modifier = Modifier.padding(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Icon(
@@ -118,7 +120,8 @@ fun QRScannerScreen(
                     text = "Connect to Server",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    textAlign = TextAlign.Center
                 )
                 Text(
                     text = "Scan QR code or enter URL manually",
@@ -131,8 +134,11 @@ fun QRScannerScreen(
                 
                 // Mode toggle buttons
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Spacer(modifier = Modifier.weight(1f))
                     OutlinedButton(
                         onClick = { 
                             showManualConnection = false
@@ -178,6 +184,7 @@ fun QRScannerScreen(
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Manual")
                     }
+                    Spacer(modifier = Modifier.weight(1f))
                 }
             }
         }
@@ -319,25 +326,42 @@ fun QRCodeDetectedContent(
     onConnect: () -> Unit,
     onScanAgain: () -> Unit
 ) {
+    // Parse the URL/JSON to extract useful information
+    val parsedInfo = remember(url) {
+        try {
+            val json = org.json.JSONObject(url)
+            mapOf(
+                "Server" to json.optString("url", ""),
+                "Version" to json.optString("version", "1.0"),
+                "Protocol" to json.optString("protocol", "virtual-keyboard-v1"),
+                "Auth" to if (json.has("auth")) "Enabled" else "None"
+            )
+        } catch (e: Exception) {
+            // Not JSON, just a URL
+            mapOf("Server" to url)
+        }
+    }
+    
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier
-            .padding(24.dp)
-            .fillMaxHeight()
+            .fillMaxSize()
+            .padding(20.dp)
     ) {
         Icon(
             imageVector = Icons.Filled.CheckCircle,
             contentDescription = null,
-            modifier = Modifier.size(64.dp),
+            modifier = Modifier.size(48.dp),
             tint = MaterialTheme.colorScheme.primary
         )
         
         Text(
             text = "Server Found!",
-            style = MaterialTheme.typography.titleLarge,
+            style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.colorScheme.primary,
+            textAlign = TextAlign.Center
         )
         
         Card(
@@ -348,24 +372,37 @@ fun QRCodeDetectedContent(
             shape = RoundedCornerShape(12.dp)
         ) {
             Column(
-                modifier = Modifier.padding(12.dp)
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Text(
-                    text = "Server URL",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = url,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 2,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                )
+                parsedInfo.forEach { (label, value) ->
+                    if (value.isNotBlank()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = value,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                textAlign = TextAlign.End
+                            )
+                        }
+                    }
+                }
             }
         }
         
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.weight(1f))
         
         Row(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
