@@ -5,15 +5,15 @@ plugins {
 }
 
 android {
-    namespace = "com.example.virtualkeyboard"
+    namespace = "com.keybridge"
     compileSdk = 35 // Use the latest compileSdk
 
     defaultConfig {
-        applicationId = "com.example.virtualkeyboard"
+        applicationId = "com.keybridge"
         minSdk = 24
         targetSdk = 35 // Use the latest targetSdk
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -71,9 +71,27 @@ dependencies {
     implementation(libs.material3) // Material 3 components
     implementation(libs.androidx.navigation.compose) // Latest Compose Navigation
     implementation("androidx.compose.material3:material3:1.2.1") // Use the latest stable version
+    
+    // Material Icons Extended for additional icons
+    implementation("androidx.compose.material:material-icons-extended:1.7.5")
 
     // WebSocket client
     implementation(libs.java.websocket) // WebSocket library for communication
+
+    // Camera and QR Code dependencies
+    implementation("androidx.camera:camera-core:1.3.1")
+    implementation("androidx.camera:camera-camera2:1.3.1")
+    implementation("androidx.camera:camera-lifecycle:1.3.1")
+    implementation("androidx.camera:camera-view:1.3.1")
+    implementation("androidx.camera:camera-extensions:1.3.1")
+    
+    // QR Code scanning
+    implementation("com.google.mlkit:barcode-scanning:17.2.0")
+    
+    // JSON handling
+    implementation("org.json:json:20231013")
+    
+    // Crypto dependencies (using built-in Android crypto APIs)
 
     // Testing dependencies
     testImplementation(libs.junit) // JUnit for unit testing

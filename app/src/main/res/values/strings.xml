@@ -1,3 +1,103 @@
 <resources>
-    <string name="app_name">VirtualKeyboard</string>
+    <string name="app_name">KeyBridge</string>
+    
+    <!-- Navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_scanner">Scanner</string>
+    <string name="nav_profile">Profile</string>
+    
+    <!-- Home Screen -->
+    <string name="connection_status_connected">Connected</string>
+    <string name="connection_status_disconnected">Disconnected</string>
+    <string name="connection_status_connecting">Connecting…</string>
+    <string name="connection_status_error">Connection Error</string>
+    <string name="button_scan_qr_code">Scan QR Code</string>
+    <string name="text_input_title">Text Input</string>
+    <string name="text_input_placeholder">Type text to send…</string>
+    <string name="button_send">Send</string>
+    <string name="keyboard_controls_title">Keyboard Controls</string>
+    <string name="special_keys_title">Special Keys</string>
+    <string name="function_keys_title">Function Keys</string>
+    <string name="common_hotkeys_title">Common Hotkeys</string>
+    
+    <!-- QR Scanner Screen -->
+    <string name="qr_scanner_title">QR Code Scanner</string>
+    <string name="qr_scanner_description">Scan the QR code from your computer to connect</string>
+    <string name="camera_permission_required">Camera Permission Required</string>
+    <string name="camera_permission_description">This app needs camera access to scan QR codes for connection setup.</string>
+    <string name="button_grant_camera_permission">Grant Camera Permission</string>
+    <string name="qr_code_detected">QR Code Detected!</string>
+    <string name="server_url_label">Server URL:</string>
+    <string name="button_scan_again">Scan Again</string>
+    <string name="button_connect">Connect</string>
+    <string name="button_connecting">Connecting…</string>
+    <string name="instructions_title">Instructions</string>
+    <string name="instructions_text">1. Run the KeyBridge Server on your computer\n2. A QR code will be displayed on your computer screen\n3. Point your phone camera at the QR code\n4. The app will automatically connect to your computer</string>
+    <string name="scanning_frame_instruction">Position QR code within the frame</string>
+    
+    <!-- Profile Screen -->
+    <string name="profile_subtitle">Remote Control App</string>
+    <string name="appearance_title">Appearance</string>
+    <string name="dark_theme_title">Dark Theme</string>
+    <string name="dark_theme_enabled">Dark mode is enabled</string>
+    <string name="dark_theme_disabled">Light mode is enabled</string>
+    <string name="keyboard_settings_title">Keyboard Settings</string>
+    <string name="key_repeat_rate_title">Key Repeat Rate</string>
+    <string name="key_repeat_rate_description">Adjust how fast keys repeat when held down</string>
+    <string name="typing_delay_title">Typing Delay</string>
+    <string name="typing_delay_description">Delay between character input</string>
+    <string name="haptic_feedback_title">Haptic Feedback</string>
+    <string name="haptic_feedback_enabled">Vibrate on key press</string>
+    <string name="haptic_feedback_disabled">No vibration</string>
+    <string name="connection_title">Connection</string>
+    <string name="auto_connect_title">Auto-Connect</string>
+    <string name="auto_connect_enabled">Automatically connect to last server</string>
+    <string name="auto_connect_disabled">Manual connection required</string>
+    <string name="about_title">About</string>
+    <string name="app_version_title">App Version</string>
+    <string name="app_version_value">1.0.0</string>
+    <string name="build_title">Build</string>
+    <string name="build_value">Debug</string>
+    <string name="framework_title">Framework</string>
+    <string name="framework_value">Jetpack Compose</string>
+    <string name="platform_title">Platform</string>
+    <string name="platform_value">Android</string>
+    
+    <!-- Key Labels -->
+    <string name="key_ctrl">Ctrl</string>
+    <string name="key_alt">Alt</string>
+    <string name="key_shift">Shift</string>
+    <string name="key_tab">Tab</string>
+    <string name="key_enter">Enter</string>
+    <string name="key_space">Space</string>
+    <string name="key_backspace">Backspace</string>
+    <string name="key_delete">Delete</string>
+    <string name="key_escape">Esc</string>
+    <string name="key_copy">Copy</string>
+    <string name="key_paste">Paste</string>
+    <string name="key_cut">Cut</string>
+    <string name="key_undo">Undo</string>
+    <string name="key_select_all">Select All</string>
+    <string name="key_alt_tab">Alt+Tab</string>
+    
+    <!-- Error Messages -->
+    <string name="error_connection_failed">Connection failed</string>
+    <string name="error_camera_permission_denied">Camera permission denied</string>
+    <string name="error_qr_code_invalid">Invalid QR code</string>
+    <string name="error_network_unavailable">Network unavailable</string>
+    
+    <!-- Content Descriptions for Accessibility -->
+    <string name="cd_profile_picture">Profile picture</string>
+    <string name="cd_connection_status">Connection status</string>
+    <string name="cd_scan_qr_code">Scan QR code</string>
+    <string name="cd_send_text">Send text</string>
+    <string name="cd_keyboard_key">Keyboard key</string>
+    <string name="cd_settings_toggle">Settings toggle</string>
+    
+    <!-- Toast Messages -->
+    <string name="toast_text_sent">Text sent</string>
+    <string name="toast_key_pressed">Key pressed</string>
+    <string name="toast_connected">Connected to server</string>
+    <string name="toast_disconnected">Disconnected from server</string>
+    <string name="toast_connection_error">Connection error occurred</string>
 </resources>
