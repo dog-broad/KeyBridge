@@ -1,6 +1,24 @@
+<div align="center">
+
 # KeyBridge Android App
 
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Android](https://img.shields.io/badge/Android-7.0+-green.svg)](https://developer.android.com/)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-purple.svg)](https://kotlinlang.org/)
+
 A modern Android application that allows you to remotely control your computer's keyboard through WebSocket communication. Built with Jetpack Compose and Material Design 3.
+
+---
+
+### 🖥️ **This app requires the KeyBridge Server**
+
+**[➡️ Get KeyBridge Server](https://github.com/dog-broad/keybridge-server)**
+
+Both components work together to provide secure remote keyboard control.
+
+---
+
+</div>
 
 ## Features
 
