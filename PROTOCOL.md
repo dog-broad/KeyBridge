@@ -127,21 +127,18 @@ count is capped so it can never loop unbounded.)
 
 These messages are flat (not enveloped) and handle connection lifecycle.
 
-On connect, the server sends a handshake the app reads for its session id and feature
-flags:
+On connect, the server sends a handshake carrying the per-connection salt the app uses
+to derive the session key (see Pairing and encryption). It is the one plaintext message:
 
 ```json
 { "type": "handshake", "protocol_version": "2.0",
-  "features": { "authentication": true, "encryption": true, "compression": true },
-  "session_id": "…" }
+  "features": { "encryption": true, "compression": true },
+  "session_id": "…", "salt": "<base64>" }
 ```
 
-If authentication is enabled, the app authenticates with the token carried in the
-pairing QR code:
-
-```json
-{ "command": "authenticate", "token": "…" }
-```
+There is no separate authentication step: having scanned the QR, the app holds the
+pairing secret and derives the session key, and the server accepts only what
+authenticates under it.
 
 Keep-alive: the app sends a ping periodically and the server replies with a pong:
 
@@ -149,9 +146,18 @@ Keep-alive: the app sends a ping periodically and the server replies with a pong
 { "command": "ping", "timestamp": 1701234567890 }
 ```
 
-## Encryption
+## Pairing and encryption
 
-When message encryption is enabled, the serialized envelope (or control message) is the
-plaintext that is encrypted before being sent and decrypted on receipt. The envelope
-shape above describes the decrypted message. Encryption is a transport concern layered
-around the protocol; it does not change the envelope.
+The QR the app scans carries a random 32-byte **pairing secret** (base64, field `key`)
+that the server generated at startup. It arrives only by scanning the QR and is never
+sent over the connection. From the handshake `salt`, the app derives the session key:
+
+```
+session_key = HMAC-SHA256(pairing_secret, salt)
+```
+
+Every message the app sends after the handshake is AES-256-GCM under the session key
+(`nonce ‖ ciphertext ‖ tag`, URL-safe base64, no padding), and the server's acks come
+back the same way. If the app reconnects, it re-derives the key from the same pairing
+secret (kept from the scanned QR) and the new salt; if it has no pairing secret (e.g. a
+bare-URL reconnect), it cannot derive the key and prompts the user to scan the QR again.
