@@ -59,10 +59,13 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
+import com.keybridge.protocol.DeliveryState
 import com.keybridge.viewmodel.PreferencesViewModel
 import com.keybridge.viewmodel.WebSocketViewModel
 import com.keybridge.viewmodel.WebSocketViewModel.ServerFeatures
@@ -87,6 +90,7 @@ fun HomeScreen(
     val connectionState by viewModel.connectionState.collectAsState()
     val lastError by viewModel.lastError.collectAsState()
     val serverFeatures by viewModel.serverFeatures.collectAsState()
+    val textDelivery by viewModel.textDelivery.collectAsState()
     val hapticFeedback by preferencesViewModel.hapticFeedback.collectAsState()
     val typingDelay by preferencesViewModel.typingDelay.collectAsState()
     val keyRepeatRate by preferencesViewModel.keyRepeatRate.collectAsState()
@@ -182,21 +186,31 @@ fun HomeScreen(
                 serverFeatures = serverFeatures
             )
 
+            // Clear the field only once the host has confirmed delivery — never on send.
+            LaunchedEffect(textDelivery) {
+                val state = textDelivery
+                if (state is DeliveryState.Delivered) {
+                    textInput = ""
+                    viewModel.consumeTextDelivery()
+                    snackbarHostState.showSnackbar("Delivered")
+                }
+            }
+
             // Text input section
             TextInputSection(
                 textInput = textInput,
                 onTextChange = { textInput = it },
-                onSendText = { 
+                onSendText = {
                     if (isConnected && textInput.isNotBlank()) {
-                        viewModel.sendText(textInput, typingDelay.toInt())
                         performHapticFeedback()
-                        val sentText = textInput
-                        textInput = ""
-                        scope.launch {
-                            snackbarHostState.showSnackbar("Sent: $sentText")
-                        }
+                        viewModel.sendText(textInput, typingDelay.toInt())
                     }
                 },
+                onRetry = {
+                    performHapticFeedback()
+                    viewModel.retryTextDelivery()
+                },
+                deliveryState = textDelivery,
                 isConnected = isConnected
             )
 
@@ -532,8 +546,12 @@ fun TextInputSection(
     textInput: String,
     onTextChange: (String) -> Unit,
     onSendText: () -> Unit,
+    onRetry: () -> Unit,
+    deliveryState: DeliveryState,
     isConnected: Boolean
 ) {
+    val isSending = deliveryState is DeliveryState.Sending
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp)
@@ -556,7 +574,7 @@ fun TextInputSection(
                     fontWeight = FontWeight.SemiBold
                 )
             }
-            
+
             OutlinedTextField(
                 value = textInput,
                 onValueChange = onTextChange,
@@ -567,10 +585,70 @@ fun TextInputSection(
                 maxLines = 4,
                 shape = RoundedCornerShape(12.dp)
             )
-            
+
+            // Delivery feedback: progress while sending, failure + retry on failure.
+            when (deliveryState) {
+                is DeliveryState.Sending -> {
+                    val total = deliveryState.totalChunks
+                    val progress = if (total > 0) deliveryState.ackedChunks.toFloat() / total else 0f
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        LinearProgressIndicator(
+                            progress = { progress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .semantics {
+                                    contentDescription =
+                                        "Sending ${deliveryState.ackedChunks} of $total parts"
+                                }
+                        )
+                        Text(
+                            text = if (total > 1) {
+                                "Sending ${deliveryState.ackedChunks}/$total…"
+                            } else {
+                                "Sending…"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                is DeliveryState.Failed -> {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = deliveryState.reason,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (deliveryState.retryable) {
+                            TextButton(onClick = onRetry, enabled = isConnected) {
+                                Icon(
+                                    imageVector = Icons.Filled.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Retry")
+                            }
+                        }
+                    }
+                }
+                else -> {}
+            }
+
             Button(
                 onClick = onSendText,
-                enabled = isConnected && textInput.isNotBlank(),
+                enabled = isConnected && textInput.isNotBlank() && !isSending,
                 modifier = Modifier.align(Alignment.End),
                 shape = RoundedCornerShape(12.dp)
             ) {
@@ -580,7 +658,7 @@ fun TextInputSection(
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Send", fontWeight = FontWeight.Medium)
+                Text(if (isSending) "Sending…" else "Send", fontWeight = FontWeight.Medium)
             }
         }
     }
