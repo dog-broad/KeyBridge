@@ -350,7 +350,6 @@ fun ConnectionStatusCard(
                         WebSocketViewModel.ConnectionState.DISCONNECTED -> "Disconnected"
                         WebSocketViewModel.ConnectionState.CONNECTING -> "Connecting..."
                         WebSocketViewModel.ConnectionState.CONNECTED -> "Connected"
-                        WebSocketViewModel.ConnectionState.AUTHENTICATING -> "Authenticating..."
                         WebSocketViewModel.ConnectionState.AUTHENTICATED -> "Ready ✓"
                         WebSocketViewModel.ConnectionState.ERROR -> "Connection Error"
                     },
