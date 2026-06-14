@@ -245,33 +245,17 @@ fun HomeScreen(
                     }
                     performHapticFeedback()
                 },
-                onKeyPress = { key -> 
+                onKeyPress = { key ->
                     if (isConnected) {
                         performHapticFeedback()
                         if (key.action.contains("+")) {
                             val keys = key.action.split("+")
                             viewModel.sendKeyCombo(keys)
                         } else {
-                            // Apply any toggled modifiers
-                            val modifiers = mutableListOf<String>()
-                            if (ctrlToggled) modifiers.add("ctrl")
-                            if (altToggled) modifiers.add("alt")
-                            if (shiftToggled) modifiers.add("shift")
-                            if (winToggled) modifiers.add("cmd")
-                            
-                            if (modifiers.isNotEmpty()) {
-                                // Send as key combo with modifiers
-                                val allKeys = modifiers + key.action
-                                viewModel.sendKeyCombo(allKeys)
-                                // Release all modifiers after combo
-                                ctrlToggled = false
-                                altToggled = false
-                                shiftToggled = false
-                                winToggled = false
-                                modifiers.forEach { viewModel.sendKeyRelease(it) }
-                            } else {
-                                viewModel.sendKeyPressAndRelease(key.action)
-                            }
+                            // Toggled modifiers are already held down on the host and stay held
+                            // until tapped off (the "tap to hold" contract). Just send the key —
+                            // the held modifiers apply to it and remain held for the next key.
+                            viewModel.sendKeyPressAndRelease(key.action)
                         }
                     }
                 },
