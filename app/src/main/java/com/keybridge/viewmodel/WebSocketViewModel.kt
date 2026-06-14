@@ -616,8 +616,9 @@ class WebSocketViewModel : ViewModel() {
             // Combine nonce + ciphertext (tag is appended by doFinal)
             val encryptedData = nonce + ciphertext
             
-            // Encode as base64 (URL-safe, no padding — matches the host)
-            Base64.encodeToString(encryptedData, Base64.URL_SAFE or Base64.NO_PADDING)
+            // Encode as base64 (URL-safe, no padding, no line wrapping — matches the host).
+            // NO_WRAP is essential: without it Android inserts a newline every 76 chars.
+            Base64.encodeToString(encryptedData, Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP)
         } catch (e: Exception) {
             Log.e(TAG, "Encryption failed", e)
             message
