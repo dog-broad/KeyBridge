@@ -92,6 +92,10 @@ class WebSocketViewModel : ViewModel() {
     
     // Security and protocol features
     private var connectionData: ConnectionData? = null
+    // The full QR payload (URL + auth token) of the last real pairing, kept so a reconnect
+    // can re-authenticate. Reconnecting with only the bare URL would drop the token and put
+    // the app in a false-authenticated state where it encrypts messages the host can't read.
+    private var lastQrData: String? = null
     private var sessionId: String? = null
     private var protocolVersion: String = "1.0"
     private var isEncryptionEnabled: Boolean = false
@@ -182,6 +186,8 @@ class WebSocketViewModel : ViewModel() {
                 
                 // Parse connection data from QR code
                 connectionData = parseConnectionData(qrData)
+                // Remember the full payload (with token) so reconnects can re-authenticate.
+                if (connectionData?.auth != null) lastQrData = qrData
                 val url = connectionData?.url ?: qrData
                 _serverUrl.value = url
                 
@@ -244,7 +250,16 @@ class WebSocketViewModel : ViewModel() {
             }
         }
     }
-    
+
+    /**
+     * Reconnect to the last server, reusing the stored pairing token so the session
+     * re-authenticates. Falls back to the bare URL only if we never had a token.
+     */
+    fun reconnect() {
+        val target = lastQrData ?: _serverUrl.value
+        if (target.isNotBlank()) connectToServer(target)
+    }
+
     fun disconnect() {
          viewModelScope.launch {
              stopKeepAlive()
@@ -559,14 +574,25 @@ class WebSocketViewModel : ViewModel() {
                 )
                 
                 Log.d(TAG, "Server features: ${_serverFeatures.value}")
-                
-                // Set up encryption if supported
+
+                if (_serverFeatures.value.authentication && connectionData?.auth == null) {
+                    // The server requires authentication but we have no token (e.g. a reconnect
+                    // via the bare URL, or an expired pairing). Do NOT proceed: turning on
+                    // encryption and reporting "authenticated" here would send messages the host
+                    // cannot decrypt. Surface a clear re-pair prompt instead.
+                    Log.e(TAG, "Server requires authentication but no pairing token is available")
+                    _connectionState.value = ConnectionState.ERROR
+                    _lastError.value = "Pairing expired — scan the QR code again to reconnect"
+                    return
+                }
+
+                // Encryption is only enabled on a path that will actually authenticate (or where
+                // the server needs no auth), so we never encrypt while unauthenticated.
                 if (_serverFeatures.value.encryption) {
                     setupEncryption()
                 }
-                
-                // Authenticate if required
-                if (_serverFeatures.value.authentication && connectionData?.auth != null) {
+
+                if (_serverFeatures.value.authentication) {
                     authenticateWithServer()
                 } else {
                     _connectionState.value = ConnectionState.AUTHENTICATED
@@ -899,11 +925,13 @@ class WebSocketViewModel : ViewModel() {
                 }
                 
                 try {
-                    val url = connectionData?.url ?: _serverUrl.value
-                    if (url.isNotBlank()) {
+                    // Reconnect with the full pairing payload (URL + token) so we re-authenticate;
+                    // falling back to the bare URL only if we never had a token.
+                    val target = lastQrData ?: connectionData?.url ?: _serverUrl.value
+                    if (target.isNotBlank()) {
                         // Reset state before reconnecting
                         _connectionState.value = ConnectionState.DISCONNECTED
-                        connectToServer(url)
+                        connectToServer(target)
                     }
                     break
                 } catch (e: Exception) {

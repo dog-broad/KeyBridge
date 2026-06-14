@@ -176,7 +176,7 @@ fun HomeScreen(
                 },
                 onReconnect = {
                     if (serverUrl.isNotBlank()) {
-                        viewModel.connectToServer(serverUrl)
+                        viewModel.reconnect()
                         scope.launch {
                             snackbarHostState.showSnackbar("Reconnecting...")
                         }
