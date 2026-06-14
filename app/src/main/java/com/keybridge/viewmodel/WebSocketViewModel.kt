@@ -492,9 +492,16 @@ class WebSocketViewModel : ViewModel() {
                          "error" -> {
                              val errorMessage = jsonObject.optString("message", "Unknown error")
                              val code = jsonObject.optString("code", "")
-                             Log.e(TAG, "Received error response: $errorMessage (code: $code)")
-                             _connectionState.value = ConnectionState.ERROR
-                             _lastError.value = errorMessage
+                             if (code == "RATE_LIMIT_EXCEEDED") {
+                                 // Transient: the rate-limited chunk was not acked, so the delivery
+                                 // monitor will resend it once the window clears. Don't tear down the
+                                 // connection — a burst of chunks must not look like a fatal error.
+                                 Log.w(TAG, "Rate limited; unacked chunks will be retried")
+                             } else {
+                                 Log.e(TAG, "Received error response: $errorMessage (code: $code)")
+                                 _connectionState.value = ConnectionState.ERROR
+                                 _lastError.value = errorMessage
+                             }
                          }
                          else -> {
                              // Handle regular message responses
