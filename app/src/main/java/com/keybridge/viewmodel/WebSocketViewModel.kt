@@ -20,6 +20,7 @@ import android.util.Base64
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.keybridge.protocol.CHUNK_MAX_CODE_POINTS
 import com.keybridge.protocol.DeliveryState
 import com.keybridge.protocol.PROTOCOL_VERSION
 import com.keybridge.protocol.chunkText
@@ -114,7 +115,7 @@ class WebSocketViewModel : ViewModel() {
     // The most recent failed text message, kept so the user can retry it.
     private var lastFailedText: Outbound? = null
 
-    /** One outbound message and the per-chunk state the delivery monitor needs. */
+    /** One outbound message and the windowed-delivery state the monitor needs. */
     private class Outbound(
         val id: String,
         val envelopes: List<String>,
@@ -122,11 +123,17 @@ class WebSocketViewModel : ViewModel() {
     ) {
         val total: Int = envelopes.size
         val acked: BooleanArray = BooleanArray(total)
-        val attempts: IntArray = IntArray(total)
-        val lastSentAt: LongArray = LongArray(total)
+        // Chunks [0, sentCount) have been sent at least once; this is the window frontier.
+        var sentCount: Int = 0
+        // Last time an ack advanced delivery — drives stall detection (not per-chunk age,
+        // because a chunk's ack latency grows with queue position and the host's typing delay).
+        var lastProgressAt: Long = 0L
+        var stallRetries: Int = 0
         var failed: Boolean = false
         val ackedCount: Int get() = acked.count { it }
         val allAcked: Boolean get() = acked.all { it }
+        // Sent-but-unacked chunks currently occupying the window.
+        val inFlight: Int get() = sentCount - ackedCount
     }
 
     companion object {
@@ -136,14 +143,19 @@ class WebSocketViewModel : ViewModel() {
         private const val CONNECTION_HEALTH_CHECK_INTERVAL = 60000L // 60 seconds
         private const val MAX_PONG_DELAY = 90000L // 90 seconds (3 ping intervals)
 
-        // Bounded, idempotent retry. A chunk is resent if unacked past a backing-off
-        // timeout, at most MAX_CHUNK_RETRIES times; then the message fails. The monitor
-        // ticks at DELIVERY_TICK and exits when nothing is pending, so it can never spin
-        // unbounded (the bug that caused acks to be disabled in the first place).
-        private const val MAX_CHUNK_RETRIES = 3
-        private const val DELIVERY_TICK_MS = 500L
-        private const val RETRY_BASE_TIMEOUT_MS = 1500L
-        private const val RETRY_MAX_TIMEOUT_MS = 6000L
+        // Delivery is flow-controlled and progress-driven. At most SEND_WINDOW chunks are
+        // in flight (unacked) at once, so the host is never flooded and sending paces to the
+        // host's apply rate. Failure is declared only on a *stall* — no ack progress for
+        // STALL_TIMEOUT — never on a per-chunk timer, since a chunk deep in a slow (delayed)
+        // paste can legitimately take many seconds to be acked. The monitor exits when
+        // nothing is pending, so it can never spin unbounded.
+        private const val SEND_WINDOW = 8
+        private const val DELIVERY_TICK_MS = 1000L
+        private const val STALL_TIMEOUT_MS = 10000L
+        private const val MAX_STALL_RETRIES = 3
+        // Target per-chunk apply time; chunk size shrinks as the per-character delay grows,
+        // so one chunk always types quickly and acks arrive well within the stall window.
+        private const val CHUNK_BUDGET_MS = 1000
     }
     
     fun connectToServer(qrData: String) {
@@ -259,7 +271,7 @@ class WebSocketViewModel : ViewModel() {
             return
         }
 
-        val chunks = chunkText(text)
+        val chunks = chunkText(text, maxCodePointsForDelay(typingDelayMs))
         if (chunks.isEmpty()) return
 
         val id = UUID.randomUUID().toString()
@@ -272,18 +284,28 @@ class WebSocketViewModel : ViewModel() {
             buildEnvelope(id, seq, total, "type", payload)
         }
         val outbound = Outbound(id, envelopes, isText = true)
+        outbound.lastProgressAt = System.currentTimeMillis()
         pending[id] = outbound
         lastFailedText = null
         _textDelivery.value = DeliveryState.Sending(id, 0, total)
 
         viewModelScope.launch {
-            val now = System.currentTimeMillis()
-            for (seq in 0 until outbound.total) {
-                sendRaw(outbound.envelopes[seq])
-                outbound.lastSentAt[seq] = now
-            }
-            Log.d(TAG, "Sent text id=$id in $total chunk(s) (delay ${typingDelayMs}ms)")
+            sendWindow(outbound)
+            Log.d(TAG, "Sending text id=$id in $total chunk(s), window=$SEND_WINDOW (delay ${typingDelayMs}ms)")
             startDeliveryMonitor()
+        }
+    }
+
+    /** Shrink the chunk size as the per-character delay grows, so one chunk types quickly. */
+    private fun maxCodePointsForDelay(delayMs: Int): Int =
+        if (delayMs <= 0) CHUNK_MAX_CODE_POINTS
+        else (CHUNK_BUDGET_MS / delayMs).coerceIn(10, CHUNK_MAX_CODE_POINTS)
+
+    /** Send chunks until the window is full (in-flight == SEND_WINDOW) or all are sent. */
+    private fun sendWindow(outbound: Outbound) {
+        while (outbound.sentCount < outbound.total && outbound.inFlight < SEND_WINDOW) {
+            sendRaw(outbound.envelopes[outbound.sentCount])
+            outbound.sentCount++
         }
     }
     
@@ -308,11 +330,11 @@ class WebSocketViewModel : ViewModel() {
         val id = UUID.randomUUID().toString()
         val envelope = buildEnvelope(id, 0, 1, type, payload)
         val outbound = Outbound(id, listOf(envelope), isText = false)
+        outbound.lastProgressAt = System.currentTimeMillis()
         pending[id] = outbound
 
         viewModelScope.launch {
-            sendRaw(envelope)
-            outbound.lastSentAt[0] = System.currentTimeMillis()
+            sendWindow(outbound)
             Log.d(TAG, "Sent $description (id=$id)")
             startDeliveryMonitor()
         }
@@ -732,13 +754,19 @@ class WebSocketViewModel : ViewModel() {
         if (seq < 0 || seq >= outbound.total) return
 
         if (json.optString("status") == "ok") {
-            outbound.acked[seq] = true
+            if (!outbound.acked[seq]) {
+                outbound.acked[seq] = true
+                // Progress: refresh the stall timer and restore the full stall budget.
+                outbound.lastProgressAt = System.currentTimeMillis()
+                outbound.stallRetries = 0
+            }
             if (outbound.allAcked) {
                 pending.remove(id)
                 if (outbound.isText) _textDelivery.value = DeliveryState.Delivered(id)
                 Log.d(TAG, "Delivered id=$id")
-            } else if (outbound.isText) {
-                _textDelivery.value = DeliveryState.Sending(id, outbound.ackedCount, outbound.total)
+            } else {
+                sendWindow(outbound)  // an ack freed a window slot; send the next chunk(s)
+                if (outbound.isText) _textDelivery.value = DeliveryState.Sending(id, outbound.ackedCount, outbound.total)
             }
         } else {
             // An error ack means the host rejected this input; retrying the same bytes
@@ -768,9 +796,10 @@ class WebSocketViewModel : ViewModel() {
     }
 
     /**
-     * Bounded, idempotent retry monitor. Resends only unacked chunks (same id/seq, so the
-     * host de-dupes), at most [MAX_CHUNK_RETRIES] times per chunk with a backing-off
-     * timeout, then fails the message. Exits when nothing is pending or the connection
+     * Stall-driven retry monitor. While acks keep advancing, the message is healthy no matter
+     * how slowly the host types. Only when no ack arrives for [STALL_TIMEOUT_MS] does it resend
+     * the in-flight (unacked) chunks — same id/seq, so the host de-dupes — at most
+     * [MAX_STALL_RETRIES] times before failing. Exits when nothing is pending or the connection
      * drops, so it cannot spin unbounded.
      */
     private fun startDeliveryMonitor() {
@@ -782,25 +811,27 @@ class WebSocketViewModel : ViewModel() {
                 val now = System.currentTimeMillis()
                 for (outbound in pending.values.toList()) {
                     if (outbound.failed) continue
-                    for (seq in 0 until outbound.total) {
-                        if (outbound.acked[seq]) continue
-                        val timeout = (RETRY_BASE_TIMEOUT_MS shl outbound.attempts[seq])
-                            .coerceAtMost(RETRY_MAX_TIMEOUT_MS)
-                        if (now - outbound.lastSentAt[seq] < timeout) continue
+                    // Healthy as long as acks keep advancing; only a true stall is a problem.
+                    if (now - outbound.lastProgressAt < STALL_TIMEOUT_MS) continue
 
-                        if (outbound.attempts[seq] >= MAX_CHUNK_RETRIES) {
-                            failMessage(outbound, "Delivery was not confirmed after retries", retryable = true)
-                            break
-                        }
-                        outbound.attempts[seq] = outbound.attempts[seq] + 1
-                        outbound.lastSentAt[seq] = now
-                        try {
-                            sendRaw(outbound.envelopes[seq])
-                            Log.w(TAG, "Retry id=${outbound.id}#$seq (attempt ${outbound.attempts[seq]})")
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Retry send failed for id=${outbound.id}#$seq", e)
+                    if (outbound.stallRetries >= MAX_STALL_RETRIES) {
+                        failMessage(outbound, "Delivery stalled (no response from the PC)", retryable = true)
+                        continue
+                    }
+                    outbound.stallRetries++
+                    outbound.lastProgressAt = now
+                    // Resend only the in-flight (sent-but-unacked) chunks — at most the window
+                    // size, not the whole message. The host de-dupes any it already applied.
+                    for (seq in 0 until outbound.sentCount) {
+                        if (!outbound.acked[seq]) {
+                            try {
+                                sendRaw(outbound.envelopes[seq])
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Stall resend failed for id=${outbound.id}#$seq", e)
+                            }
                         }
                     }
+                    Log.w(TAG, "Stall resend id=${outbound.id} (attempt ${outbound.stallRetries})")
                 }
             }
             // The connection dropped with chunks still unconfirmed: keep the text, show failure.
@@ -821,21 +852,18 @@ class WebSocketViewModel : ViewModel() {
             return
         }
         outbound.failed = false
-        val now = System.currentTimeMillis()
-        for (seq in 0 until outbound.total) {
-            if (!outbound.acked[seq]) {
-                outbound.attempts[seq] = 0
-                outbound.lastSentAt[seq] = now
-            }
-        }
+        outbound.stallRetries = 0
+        outbound.lastProgressAt = System.currentTimeMillis()
         pending[outbound.id] = outbound
         lastFailedText = null
         _textDelivery.value = DeliveryState.Sending(outbound.id, outbound.ackedCount, outbound.total)
 
         viewModelScope.launch {
-            for (seq in 0 until outbound.total) {
+            // Resend the in-flight chunks, then continue filling the window with any not-yet-sent.
+            for (seq in 0 until outbound.sentCount) {
                 if (!outbound.acked[seq]) sendRaw(outbound.envelopes[seq])
             }
+            sendWindow(outbound)
             startDeliveryMonitor()
         }
     }
