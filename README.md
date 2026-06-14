@@ -145,24 +145,21 @@ app/src/main/java/com/keybridge/
 └── MainActivity.kt    # App entry point
 ```
 
+The wire protocol the app speaks is specified in [PROTOCOL.md](PROTOCOL.md).
+
 ## Communication Protocol
 
-### Message Format
-All messages use JSON format with AES-256-GCM encryption after authentication:
+Input travels in a small versioned envelope, and the server acknowledges every chunk it
+applies — which is how the app shows *confirmed* delivery and clears the text field only
+once the server has it. Long text is split into ordered chunks the app tracks as
+progress. The full contract — envelope fields, input types, the acknowledgement shape,
+chunking, and bounded idempotent retry — is specified in **[PROTOCOL.md](PROTOCOL.md)**.
+
+A `type` message, for example, looks like:
 
 ```json
-// Text input
-{"command": "type", "text": "Hello World"}
-
-// Key press/release
-{"command": "key_press", "key": "ctrl"}
-{"command": "key_release", "key": "ctrl"}
-
-// Key combination (e.g., Ctrl+C)
-{"command": "key_combo", "keys": ["ctrl", "c"]}
-
-// Keep-alive ping
-{"command": "ping", "timestamp": 1701234567890}
+{ "v": 1, "id": "…", "seq": 0, "total": 1, "type": "type",
+  "payload": { "text": "Hello World" } }
 ```
 
 ### Supported Key Codes
