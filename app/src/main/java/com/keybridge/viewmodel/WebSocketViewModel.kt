@@ -48,7 +48,6 @@ class WebSocketViewModel : ViewModel() {
         DISCONNECTED,
         CONNECTING,
         CONNECTED,
-        AUTHENTICATING,
         AUTHENTICATED,
         ERROR
     }
@@ -57,15 +56,10 @@ class WebSocketViewModel : ViewModel() {
         val version: String,
         val url: String,
         val protocol: String,
-        val auth: AuthData? = null
+        // Base64 pairing secret carried in the QR — the root of trust for the session key.
+        val pairingSecret: String? = null
     )
-    
-    data class AuthData(
-        val token: String,
-        val expires: Long,
-        val type: String
-    )
-    
+
     data class ServerFeatures(
         val authentication: Boolean = false,
         val encryption: Boolean = false,
@@ -186,8 +180,8 @@ class WebSocketViewModel : ViewModel() {
                 
                 // Parse connection data from QR code
                 connectionData = parseConnectionData(qrData)
-                // Remember the full payload (with token) so reconnects can re-authenticate.
-                if (connectionData?.auth != null) lastQrData = qrData
+                // Remember the full payload (with the pairing secret) so reconnects can re-key.
+                if (connectionData?.pairingSecret != null) lastQrData = qrData
                 val url = connectionData?.url ?: qrData
                 _serverUrl.value = url
                 
@@ -451,20 +445,11 @@ class WebSocketViewModel : ViewModel() {
     private fun parseConnectionData(qrData: String): ConnectionData? {
         return try {
             val jsonObject = JSONObject(qrData)
-            val authData = if (jsonObject.has("auth")) {
-                val authObj = jsonObject.getJSONObject("auth")
-                AuthData(
-                    token = authObj.getString("token"),
-                    expires = authObj.getLong("expires"),
-                    type = authObj.getString("type")
-                )
-            } else null
-            
             ConnectionData(
                 version = jsonObject.optString("version", "1.0"),
                 url = jsonObject.getString("url"),
                 protocol = jsonObject.optString("protocol", "keybridge-v1"),
-                auth = authData
+                pairingSecret = if (jsonObject.has("key")) jsonObject.getString("key") else null
             )
         } catch (e: Exception) {
             Log.d(TAG, "QR data is not JSON, treating as legacy format: $qrData")
@@ -502,28 +487,12 @@ class WebSocketViewModel : ViewModel() {
                 "connection_status" -> handleConnectionStatus(jsonObject)
                 "ack" -> handleAck(jsonObject)
                 else -> {
-                     // Control-plane responses (authentication, pong, errors) are flat status objects.
+                     // Control-plane responses (pong, errors) are flat status objects.
                      val status = jsonObject.optString("status")
                      when (status) {
                          "success" -> {
-                             val successMessage = jsonObject.optString("message", "")
-                             when (successMessage) {
-                                 "Authentication successful" -> {
-                                     Log.d(TAG, "Authentication successful - updating state to AUTHENTICATED")
-                                     sessionId = jsonObject.optString("session_id")
-                                     _connectionState.value = ConnectionState.AUTHENTICATED
-                                     _lastError.value = ""
-                                 }
-                                 "pong" -> {
-                                     Log.d(TAG, "Received pong response")
-                                     lastPongTime = System.currentTimeMillis()
-                                 }
-                                 "Acknowledgment received" -> {
-                                     Log.d(TAG, "Server acknowledged our acknowledgment")
-                                 }
-                                 else -> {
-                                     Log.d(TAG, "Received success message: $successMessage")
-                                 }
+                             if (jsonObject.optString("message") == "pong") {
+                                 lastPongTime = System.currentTimeMillis()
                              }
                          }
                          "error" -> {
@@ -560,11 +529,11 @@ class WebSocketViewModel : ViewModel() {
         }
     }
     
-    private suspend fun handleHandshake(jsonObject: JSONObject) {
+    private fun handleHandshake(jsonObject: JSONObject) {
         try {
             protocolVersion = jsonObject.optString("protocol_version", "1.0")
             sessionId = jsonObject.optString("session_id")
-            
+
             if (jsonObject.has("features")) {
                 val features = jsonObject.getJSONObject("features")
                 _serverFeatures.value = ServerFeatures(
@@ -572,64 +541,34 @@ class WebSocketViewModel : ViewModel() {
                     encryption = features.optBoolean("encryption", false),
                     compression = features.optBoolean("compression", false)
                 )
-                
                 Log.d(TAG, "Server features: ${_serverFeatures.value}")
 
-                if (_serverFeatures.value.authentication && connectionData?.auth == null) {
-                    // The server requires authentication but we have no token (e.g. a reconnect
-                    // via the bare URL, or an expired pairing). Do NOT proceed: turning on
-                    // encryption and reporting "authenticated" here would send messages the host
-                    // cannot decrypt. Surface a clear re-pair prompt instead.
-                    Log.e(TAG, "Server requires authentication but no pairing token is available")
-                    _connectionState.value = ConnectionState.ERROR
-                    _lastError.value = "Pairing expired — scan the QR code again to reconnect"
-                    return
-                }
-
-                // Encryption is only enabled on a path that will actually authenticate (or where
-                // the server needs no auth), so we never encrypt while unauthenticated.
                 if (_serverFeatures.value.encryption) {
-                    setupEncryption()
+                    val salt = jsonObject.optString("salt", "")
+                    val secret = connectionData?.pairingSecret
+                    if (secret.isNullOrEmpty() || salt.isEmpty()) {
+                        // No pairing secret (e.g. a reconnect via the bare URL, or never scanned)
+                        // or no salt — we cannot derive the session key. Proceeding would send
+                        // messages the host can't read; surface a clear re-pair prompt instead.
+                        Log.e(TAG, "Encrypted server but no pairing secret/salt; cannot derive a session key")
+                        _connectionState.value = ConnectionState.ERROR
+                        _lastError.value = "Pairing required — scan the QR code again to reconnect"
+                        return
+                    }
+                    deriveSessionKey(secret, salt)
                 }
 
-                if (_serverFeatures.value.authentication) {
-                    authenticateWithServer()
-                } else {
-                    _connectionState.value = ConnectionState.AUTHENTICATED
-                }
+                // Authorization is implicit: possessing the QR secret lets us derive the session
+                // key, and the host will only accept what authenticates under it.
+                _connectionState.value = ConnectionState.AUTHENTICATED
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error handling handshake", e)
-        }
-    }
-    
-    private suspend fun authenticateWithServer() {
-        try {
-            Log.d(TAG, "Starting authentication process")
-            _connectionState.value = ConnectionState.AUTHENTICATING
-            
-            val authToken = connectionData?.auth?.token
-            if (authToken != null) {
-                val authMessage = JSONObject().apply {
-                    put("command", "authenticate")
-                    put("token", authToken)
-                }
-                
-                Log.d(TAG, "Sending authentication request")
-                sendRaw(authMessage.toString())
-                Log.d(TAG, "Authentication request sent successfully")
-            } else {
-                Log.e(TAG, "No authentication token available")
-                _connectionState.value = ConnectionState.ERROR
-                _lastError.value = "No authentication token available"
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Authentication request failed", e)
             _connectionState.value = ConnectionState.ERROR
-            _lastError.value = "Authentication failed: ${e.message}"
+            _lastError.value = "Failed to establish a secure session"
         }
     }
-    
+
     private suspend fun handleConnectionStatus(jsonObject: JSONObject) {
         val status = jsonObject.optString("status")
         when (status) {
@@ -643,54 +582,19 @@ class WebSocketViewModel : ViewModel() {
         }
     }
     
-    private fun setupEncryption() {
-        try {
-            // Use the exact same key derivation as the server
-            // Server uses PBKDF2HMAC with SHA256, salt="keybridge_salt", 100000 iterations
-            val secretKey = "keybridge-secret-key-change-in-production"
-            val salt = "keybridge_salt"
-            
-            // Derive key using PBKDF2 (same as server)
-            val derivedKey = deriveKey(secretKey, salt, 100000, 32)
-            
-            // Create AES-256 key from derived key
-            encryptionKey = SecretKeySpec(derivedKey, "AES")
-            
-            isEncryptionEnabled = true
-            Log.d(TAG, "AES-GCM encryption enabled")
-            Log.d(TAG, "Secret key: $secretKey")
-            Log.d(TAG, "Salt: $salt")
-            Log.d(TAG, "Derived key (hex): ${derivedKey.joinToString("") { "%02x".format(it) }}")
-            Log.d(TAG, "Derived key length: ${derivedKey.size} bytes")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to setup encryption", e)
-            isEncryptionEnabled = false
-        }
-    }
-    
-    private fun deriveKey(password: String, salt: String, iterations: Int, keyLength: Int): ByteArray {
-        // Use Android's built-in PBKDF2 implementation
-        // Note: PBKDF2WithHmacSHA256 should match Python's PBKDF2HMAC with SHA256
-        val secretKeyFactory = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
-        val keySpec = javax.crypto.spec.PBEKeySpec(
-            password.toCharArray(),
-            salt.toByteArray(),
-            iterations,
-            keyLength * 8 // keyLength in bits
-        )
-        val secretKey = secretKeyFactory.generateSecret(keySpec)
-        val keyBytes = secretKey.encoded
-        
-        // Log key derivation details for debugging
-        Log.d(TAG, "PBKDF2 key derivation:")
-        Log.d(TAG, "Password: $password")
-        Log.d(TAG, "Salt: $salt")
-        Log.d(TAG, "Iterations: $iterations")
-        Log.d(TAG, "Key length requested: $keyLength bytes")
-        Log.d(TAG, "Key length generated: ${keyBytes.size} bytes")
-        Log.d(TAG, "Key (hex): ${keyBytes.joinToString("") { "%02x".format(it) }}")
-        
-        return keyBytes
+    /**
+     * Derive this session's AES-256 key = HMAC-SHA256(pairingSecret, salt), matching the host.
+     * The pairing secret came from the QR; the salt came from the handshake. Nothing secret is
+     * logged.
+     */
+    private fun deriveSessionKey(pairingSecretB64: String, saltB64: String) {
+        val secret = Base64.decode(pairingSecretB64, Base64.URL_SAFE or Base64.NO_PADDING)
+        val salt = Base64.decode(saltB64, Base64.URL_SAFE or Base64.NO_PADDING)
+        val mac = javax.crypto.Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(secret, "HmacSHA256"))
+        encryptionKey = SecretKeySpec(mac.doFinal(salt), "AES")
+        isEncryptionEnabled = true
+        Log.d(TAG, "Session key derived")
     }
     
     private fun encryptMessage(message: String): String? {
@@ -712,11 +616,9 @@ class WebSocketViewModel : ViewModel() {
             // Combine nonce + ciphertext (tag is appended by doFinal)
             val encryptedData = nonce + ciphertext
             
-            // Encode as base64
-            val encrypted = Base64.encodeToString(encryptedData, Base64.URL_SAFE or Base64.NO_PADDING)
-            Log.d(TAG, "Encrypted message length: ${encrypted.length}")
-            Log.d(TAG, "Encrypted message preview: ${encrypted.substring(0, minOf(50, encrypted.length))}")
-            encrypted
+            // Encode as base64 (URL-safe, no padding, no line wrapping — matches the host).
+            // NO_WRAP is essential: without it Android inserts a newline every 76 chars.
+            Base64.encodeToString(encryptedData, Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP)
         } catch (e: Exception) {
             Log.e(TAG, "Encryption failed", e)
             message
@@ -726,13 +628,10 @@ class WebSocketViewModel : ViewModel() {
     private fun decryptMessage(encryptedMessage: String): String? {
         return try {
             if (!isEncryptionEnabled || encryptionKey == null) return encryptedMessage
-            
-            Log.d(TAG, "Attempting to decrypt message: ${encryptedMessage.substring(0, minOf(50, encryptedMessage.length))}...")
-            
+
             // Decode from base64
             val encryptedData = Base64.decode(encryptedMessage, Base64.URL_SAFE or Base64.NO_PADDING)
-            Log.d(TAG, "Decoded encrypted data length: ${encryptedData.size} bytes")
-            
+
             // Extract nonce (first 12 bytes) and ciphertext with tag (rest)
             val nonce = encryptedData.sliceArray(0..11)
             val ciphertextWithTag = encryptedData.sliceArray(12 until encryptedData.size)

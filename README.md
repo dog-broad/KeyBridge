@@ -41,12 +41,12 @@ Both components work together to provide secure remote keyboard control.
 - **Common Hotkeys**: Copy, Paste, Cut, Undo, Redo, Select All, Save, Find, Alt+Tab
 
 ### 🔐 Secure Connection
-- **AES-256-GCM Encryption** for all communications
-- **Token-based Authentication** with QR code setup
-- **PBKDF2 Key Derivation** with 100,000 iterations
+- **AES-256-GCM Encryption** for all communications after the handshake
+- **Per-session key** derived (`HMAC-SHA256`) from a pairing secret carried only in the QR — never sent over the network
+- **Pairing by QR**: scanning the QR is what authorizes the app; there is no shared key in the source
 - **Session Management** with automatic keep-alive
 
-**⚠️ Security Note**: The app uses a default secret key for development. Ensure your server uses the same key or implement a secure key exchange mechanism for production use.
+See [PROTOCOL.md](PROTOCOL.md) for the exact scheme.
 
 ### 📱 Easy Setup
 - **QR Code Scanning** using ML Kit for instant connection
