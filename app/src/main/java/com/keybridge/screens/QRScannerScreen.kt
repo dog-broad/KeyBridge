@@ -33,6 +33,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import com.keybridge.R
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
+import com.keybridge.util.isValidServerUrl
+import com.keybridge.util.validateServerUrl
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
@@ -662,6 +667,7 @@ fun ManualConnectionContent(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         
+        val urlError = validateServerUrl(url)
         OutlinedTextField(
             value = url,
             onValueChange = onUrlChange,
@@ -670,6 +676,9 @@ fun ManualConnectionContent(
             placeholder = { Text("ws://192.168.1.100:8765") },
             enabled = !isProcessing,
             singleLine = true,
+            isError = urlError != null,
+            supportingText = urlError?.let { { Text(stringResource(it)) } },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Filled.Wifi,
@@ -678,12 +687,12 @@ fun ManualConnectionContent(
             },
             shape = RoundedCornerShape(12.dp)
         )
-        
+
         Spacer(modifier = Modifier.height(8.dp))
-        
+
         Button(
             onClick = onConnect,
-            enabled = !isProcessing && url.isNotBlank(),
+            enabled = !isProcessing && isValidServerUrl(url),
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp)
         ) {

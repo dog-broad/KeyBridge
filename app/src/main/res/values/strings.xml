@@ -86,6 +86,9 @@
     <string name="error_camera_permission_denied">Camera permission denied</string>
     <string name="error_qr_code_invalid">Invalid QR code</string>
     <string name="error_network_unavailable">Network unavailable</string>
+    <string name="url_error_scheme">Start the address with ws:// or wss://</string>
+    <string name="url_error_host">Include the PC\'s address, e.g. ws://192.168.1.5:8765</string>
+    <string name="url_error_invalid">That doesn\'t look like a valid address</string>
     
     <!-- Content Descriptions for Accessibility -->
     <string name="cd_profile_picture">Profile picture</string>
