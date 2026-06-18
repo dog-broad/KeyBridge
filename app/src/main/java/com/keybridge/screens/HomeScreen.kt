@@ -60,12 +60,14 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.keybridge.protocol.DeliveryState
+import com.keybridge.ui.rememberReducedMotion
 import com.keybridge.viewmodel.PreferencesViewModel
 import com.keybridge.viewmodel.WebSocketViewModel
 import com.keybridge.viewmodel.WebSocketViewModel.ServerFeatures
@@ -282,9 +284,10 @@ fun ConnectionStatusCard(
     serverUrl: String,
     serverFeatures: ServerFeatures
 ) {
-    // Pulse animation for connection indicator
+    // Pulse animation for connection indicator (held static when the user minimises motion).
+    val reducedMotion = rememberReducedMotion()
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val pulseScale by infiniteTransition.animateFloat(
+    val animatedScale by infiniteTransition.animateFloat(
         initialValue = 1f,
         targetValue = 1.3f,
         animationSpec = infiniteRepeatable(
@@ -293,7 +296,7 @@ fun ConnectionStatusCard(
         ),
         label = "pulseScale"
     )
-    val pulseAlpha by infiniteTransition.animateFloat(
+    val animatedAlpha by infiniteTransition.animateFloat(
         initialValue = 1f,
         targetValue = 0.5f,
         animationSpec = infiniteRepeatable(
@@ -302,6 +305,8 @@ fun ConnectionStatusCard(
         ),
         label = "pulseAlpha"
     )
+    val pulseScale = if (reducedMotion) 1f else animatedScale
+    val pulseAlpha = if (reducedMotion) 1f else animatedAlpha
     
     Card(
         modifier = Modifier
@@ -934,7 +939,8 @@ fun KeySection(
             text = title,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.Medium
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.semantics { heading() }
         )
         content()
     }
@@ -977,10 +983,11 @@ fun KeyButton(
     var isPressed by remember { mutableStateOf(false) }
     var isLongPressing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    
+    val reducedMotion = rememberReducedMotion()
+
     val scale by animateFloatAsState(
         targetValue = if (isPressed || isLongPressing) 0.92f else 1f,
-        animationSpec = spring(dampingRatio = 0.4f, stiffness = 400f),
+        animationSpec = if (reducedMotion) snap() else spring(dampingRatio = 0.4f, stiffness = 400f),
         label = "keyScale"
     )
     
@@ -1090,9 +1097,10 @@ fun ToggleableKeyButton(
     onToggle: () -> Unit,
     enabled: Boolean
 ) {
+    val reducedMotion = rememberReducedMotion()
     val scale by animateFloatAsState(
         targetValue = if (isToggled) 0.95f else 1f,
-        animationSpec = spring(dampingRatio = 0.4f, stiffness = 400f),
+        animationSpec = if (reducedMotion) snap() else spring(dampingRatio = 0.4f, stiffness = 400f),
         label = "toggleScale"
     )
     
