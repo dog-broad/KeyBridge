@@ -25,21 +25,25 @@ jobs:
           java-version: "17"
       - uses: android-actions/setup-android@v3
 
-      - name: Decode keystore
-        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > "${{ runner.temp }}/keystore.jks"
-
-      - name: Build signed release APK
-        env:
-          KEYSTORE_FILE: ${{ runner.temp }}/keystore.jks
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+      - name: Build unsigned release APK
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleRelease --no-daemon --stacktrace
 
-      - name: Stage artifact
-        run: cp app/build/outputs/apk/release/app-release.apk "KeyBridge-${{ inputs.tag || github.ref_name }}.apk"
+      - name: Sign APK
+        env:
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASS: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > keystore.jks
+          BT="$(ls -d "$ANDROID_SDK_ROOT"/build-tools/*/ | sort -V | tail -1)"
+          OUT="KeyBridge-${{ inputs.tag || github.ref_name }}.apk"
+          "${BT}zipalign" -p -f 4 app/build/outputs/apk/release/app-release-unsigned.apk aligned.apk
+          "${BT}apksigner" sign --ks keystore.jks --ks-pass "env:KS_PASS" \
+            --ks-key-alias "$KEY_ALIAS" --key-pass "env:KEY_PASS" --out "$OUT" aligned.apk
+          "${BT}apksigner" verify --verbose "$OUT"
+          rm -f keystore.jks aligned.apk
 
       - name: Attach to release
         env:
@@ -47,4 +51,4 @@ jobs:
         run: |
           TAG="${{ inputs.tag || github.ref_name }}"
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --generate-notes
-          gh release upload "$TAG" KeyBridge-*.apk --clobber
+          gh release upload "$TAG" "KeyBridge-$TAG.apk" --clobber

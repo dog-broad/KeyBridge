@@ -22,21 +22,6 @@ android {
         }
     }
 
-    // Release signing is driven by environment variables so no keystore or password is
-    // ever committed. CI sets them from encrypted secrets; without them, the release
-    // build is simply left unsigned.
-    signingConfigs {
-        create("release") {
-            val ksFile = System.getenv("KEYSTORE_FILE")
-            if (ksFile != null) {
-                storeFile = file(ksFile)
-                storePassword = System.getenv("KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("KEY_ALIAS")
-                keyPassword = System.getenv("KEY_PASSWORD")
-            }
-        }
-    }
-
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -44,9 +29,6 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            if (System.getenv("KEYSTORE_FILE") != null) {
-                signingConfig = signingConfigs.getByName("release")
-            }
         }
     }
 
