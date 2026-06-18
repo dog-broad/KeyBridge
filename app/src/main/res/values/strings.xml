@@ -56,7 +56,7 @@
     <string name="auto_connect_disabled">Manual connection required</string>
     <string name="about_title">About</string>
     <string name="app_version_title">App Version</string>
-    <string name="app_version_value">1.0.0</string>
+    <string name="app_version_value">1.1.0</string>
     <string name="build_title">Build</string>
     <string name="build_value">Debug</string>
     <string name="framework_title">Framework</string>
@@ -191,7 +191,7 @@
     <string name="button_reset_all_settings">Reset All Settings</string>
     <string name="about_card_title">About</string>
     <string name="about_version_title">Version</string>
-    <string name="about_version_value">1.0.0</string>
+    <string name="about_version_value">1.1.0</string>
     <string name="about_built_with_title">Built with</string>
     <string name="about_built_with_value">Jetpack Compose • Material 3</string>
     <string name="about_security_title">Security</string>
