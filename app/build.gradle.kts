@@ -90,6 +90,9 @@ dependencies {
     
     // JSON handling
     implementation("org.json:json:20231013")
+
+    // Settings storage (Jetpack DataStore Preferences)
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
     
     // Crypto dependencies (using built-in Android crypto APIs)
 

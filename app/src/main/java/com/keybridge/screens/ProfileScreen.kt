@@ -28,6 +28,7 @@ import com.keybridge.R
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.AppSettingsAlt
+import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DarkMode
@@ -48,11 +49,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.keybridge.viewmodel.PreferencesViewModel
+import com.keybridge.viewmodel.ThemeMode
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,7 +63,7 @@ fun ProfileScreen(
     @Suppress("UNUSED_PARAMETER") navController: NavHostController,
     preferencesViewModel: PreferencesViewModel
 ) {
-    val isDarkTheme by preferencesViewModel.isDarkTheme.collectAsState()
+    val themeMode by preferencesViewModel.themeMode.collectAsState()
     val keyRepeatRate by preferencesViewModel.keyRepeatRate.collectAsState()
     val typingDelay by preferencesViewModel.typingDelay.collectAsState()
     val hapticFeedback by preferencesViewModel.hapticFeedback.collectAsState()
@@ -82,8 +85,8 @@ fun ProfileScreen(
         
         // Theme Settings
         ThemeSettingsCard(
-            isDarkTheme = isDarkTheme,
-            onThemeChange = { preferencesViewModel.setDarkTheme(it) }
+            themeMode = themeMode,
+            onThemeModeChange = { preferencesViewModel.setThemeMode(it) }
         )
         
         // Keyboard Settings
@@ -119,9 +122,9 @@ fun ProfileScreen(
     if (showClearDialog) {
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
-            title = { Text("Reset All Settings?") },
-            text = { 
-                Text("This will reset all preferences to their default values. This action cannot be undone.") 
+            title = { Text(stringResource(R.string.reset_dialog_title)) },
+            text = {
+                Text(stringResource(R.string.reset_dialog_message))
             },
             confirmButton = {
                 TextButton(
@@ -133,12 +136,12 @@ fun ProfileScreen(
                         contentColor = MaterialTheme.colorScheme.error
                     )
                 ) {
-                    Text("Reset")
+                    Text(stringResource(R.string.button_reset))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showClearDialog = false }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.button_cancel))
                 }
             }
         )
@@ -172,7 +175,7 @@ fun AppHeader() {
                 ) {
                     Image(
                         painter = painterResource(id = R.drawable.ic_keybridge_logo),
-                        contentDescription = "KeyBridge Logo",
+                        contentDescription = stringResource(R.string.qr_logo_cd),
                         modifier = Modifier.size(80.dp),
                         contentScale = ContentScale.Fit
                     )
@@ -182,14 +185,14 @@ fun AppHeader() {
             Spacer(modifier = Modifier.height(16.dp))
             
             Text(
-                text = "KeyBridge",
+                text = stringResource(R.string.app_name),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )
-            
+
             Text(
-                text = "Control your PC remotely",
+                text = stringResource(R.string.profile_app_subtitle),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
             )
@@ -203,18 +206,18 @@ fun AppHeader() {
             ) {
                 QuickStat(
                     icon = Icons.Filled.Security,
-                    label = "Encrypted",
-                    value = "AES-256"
+                    label = stringResource(R.string.profile_stat_encrypted_label),
+                    value = stringResource(R.string.profile_stat_encrypted_value)
                 )
                 QuickStat(
                     icon = Icons.Filled.Speed,
-                    label = "Latency",
-                    value = "< 50ms"
+                    label = stringResource(R.string.profile_stat_latency_label),
+                    value = stringResource(R.string.profile_stat_latency_value)
                 )
                 QuickStat(
                     icon = Icons.Filled.Wifi,
-                    label = "Protocol",
-                    value = "WebSocket"
+                    label = stringResource(R.string.profile_stat_protocol_label),
+                    value = stringResource(R.string.profile_stat_protocol_value)
                 )
             }
         }
@@ -253,9 +256,14 @@ fun QuickStat(
 
 @Composable
 fun ThemeSettingsCard(
-    isDarkTheme: Boolean,
-    onThemeChange: (Boolean) -> Unit
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit
 ) {
+    val options = listOf(
+        Triple(ThemeMode.LIGHT, Icons.Filled.LightMode, R.string.theme_light),
+        Triple(ThemeMode.DARK, Icons.Filled.DarkMode, R.string.theme_dark),
+        Triple(ThemeMode.SYSTEM, Icons.Filled.BrightnessAuto, R.string.theme_system),
+    )
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp)
@@ -274,23 +282,36 @@ fun ThemeSettingsCard(
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                    text = "Appearance",
+                    text = stringResource(R.string.appearance_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
             }
-            
-            SettingItem(
-                icon = if (isDarkTheme) Icons.Filled.DarkMode else Icons.Filled.LightMode,
-                title = "Dark Theme",
-                description = if (isDarkTheme) "Dark mode is enabled" else "Light mode is enabled",
-                action = {
-                    Switch(
-                        checked = isDarkTheme,
-                        onCheckedChange = onThemeChange
+
+            Text(
+                text = stringResource(R.string.theme_label),
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                options.forEach { (mode, icon, labelRes) ->
+                    FilterChip(
+                        selected = themeMode == mode,
+                        onClick = { onThemeModeChange(mode) },
+                        label = { Text(stringResource(labelRes)) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
                     )
                 }
-            )
+            }
         }
     }
 }
@@ -324,17 +345,17 @@ fun KeyboardSettingsCard(
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                    text = "Keyboard Settings",
+                    text = stringResource(R.string.keyboard_settings_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
             }
-            
+
             // Mac Mode Toggle
             SettingItem(
                 icon = Icons.Filled.Keyboard,
-                title = "Mac Mode",
-                description = if (macMode) "Using ⌘ Cmd, ⌥ Option labels" else "Using Ctrl, Alt, Win labels",
+                title = stringResource(R.string.mac_mode_title),
+                description = if (macMode) stringResource(R.string.mac_mode_enabled) else stringResource(R.string.mac_mode_disabled),
                 action = {
                     Switch(
                         checked = macMode,
@@ -348,8 +369,8 @@ fun KeyboardSettingsCard(
             // Haptic Feedback
             SettingItem(
                 icon = Icons.Filled.Vibration,
-                title = "Haptic Feedback",
-                description = if (hapticFeedback) "Vibrate on key press" else "No vibration",
+                title = stringResource(R.string.haptic_feedback_title),
+                description = if (hapticFeedback) stringResource(R.string.haptic_feedback_enabled) else stringResource(R.string.haptic_feedback_disabled),
                 action = {
                     Switch(
                         checked = hapticFeedback,
@@ -374,18 +395,18 @@ fun KeyboardSettingsCard(
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Key Repeat Rate",
+                            text = stringResource(R.string.key_repeat_rate_title),
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium
                         )
                         Text(
-                            text = "Speed when holding keys",
+                            text = stringResource(R.string.key_repeat_rate_subtitle),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     Text(
-                        text = "${String.format("%.1f", keyRepeatRate)}x",
+                        text = stringResource(R.string.key_repeat_rate_value, String.format("%.1f", keyRepeatRate)),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.SemiBold
@@ -415,18 +436,18 @@ fun KeyboardSettingsCard(
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Typing Delay",
+                            text = stringResource(R.string.typing_delay_title),
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium
                         )
                         Text(
-                            text = "Delay between characters",
+                            text = stringResource(R.string.typing_delay_subtitle),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     Text(
-                        text = "${typingDelay.toInt()}ms",
+                        text = stringResource(R.string.typing_delay_value, typingDelay.toInt()),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.SemiBold
@@ -470,16 +491,16 @@ fun ConnectionSettingsCard(
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                    text = "Connection",
+                    text = stringResource(R.string.connection_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
             }
-            
+
             SettingItem(
                 icon = Icons.Filled.AutoMode,
-                title = "Auto-Connect",
-                description = if (autoConnect) "Auto-connect to last server on app start" else "Manual connection required",
+                title = stringResource(R.string.auto_connect_title),
+                description = if (autoConnect) stringResource(R.string.auto_connect_card_enabled) else stringResource(R.string.auto_connect_disabled),
                 action = {
                     Switch(
                         checked = autoConnect,
@@ -498,7 +519,7 @@ fun ConnectionSettingsCard(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Last Server",
+                            text = stringResource(R.string.last_server_title),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium
                         )
@@ -512,7 +533,7 @@ fun ConnectionSettingsCard(
                     IconButton(onClick = onClearLastServer) {
                         Icon(
                             imageVector = Icons.Filled.Delete,
-                            contentDescription = "Clear last server",
+                            contentDescription = stringResource(R.string.cd_clear_last_server),
                             tint = MaterialTheme.colorScheme.error
                         )
                     }
@@ -547,7 +568,7 @@ fun DangerZoneCard(
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                    text = "Reset",
+                    text = stringResource(R.string.reset_card_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.error
@@ -567,7 +588,7 @@ fun DangerZoneCard(
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Reset All Settings")
+                Text(stringResource(R.string.button_reset_all_settings))
             }
         }
     }
@@ -593,28 +614,28 @@ fun AppInfoCard() {
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                    text = "About",
+                    text = stringResource(R.string.about_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
             }
-            
+
             InfoItem(
                 icon = Icons.Filled.AppSettingsAlt,
-                title = "Version",
-                description = "1.0.0"
+                title = stringResource(R.string.about_version_title),
+                description = stringResource(R.string.about_version_value)
             )
-            
+
             InfoItem(
                 icon = Icons.Filled.Code,
-                title = "Built with",
-                description = "Jetpack Compose • Material 3"
+                title = stringResource(R.string.about_built_with_title),
+                description = stringResource(R.string.about_built_with_value)
             )
-            
+
             InfoItem(
                 icon = Icons.Filled.Security,
-                title = "Security",
-                description = "AES-256-GCM Encryption"
+                title = stringResource(R.string.about_security_title),
+                description = stringResource(R.string.about_security_value)
             )
         }
     }

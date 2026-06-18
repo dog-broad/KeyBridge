@@ -20,6 +20,10 @@ import android.util.Base64
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.keybridge.protocol.CHUNK_MAX_CODE_POINTS
+import com.keybridge.protocol.DeliveryState
+import com.keybridge.protocol.PROTOCOL_VERSION
+import com.keybridge.protocol.chunkText
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,7 +36,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URI
 import java.security.SecureRandom
-import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -43,7 +48,6 @@ class WebSocketViewModel : ViewModel() {
         DISCONNECTED,
         CONNECTING,
         CONNECTED,
-        AUTHENTICATING,
         AUTHENTICATED,
         ERROR
     }
@@ -52,15 +56,10 @@ class WebSocketViewModel : ViewModel() {
         val version: String,
         val url: String,
         val protocol: String,
-        val auth: AuthData? = null
+        // Base64 pairing secret carried in the QR — the root of trust for the session key.
+        val pairingSecret: String? = null
     )
-    
-    data class AuthData(
-        val token: String,
-        val expires: Long,
-        val type: String
-    )
-    
+
     data class ServerFeatures(
         val authentication: Boolean = false,
         val encryption: Boolean = false,
@@ -87,37 +86,74 @@ class WebSocketViewModel : ViewModel() {
     
     // Security and protocol features
     private var connectionData: ConnectionData? = null
+    // The full QR payload (URL + auth token) of the last real pairing, kept so a reconnect
+    // can re-authenticate. Reconnecting with only the bare URL would drop the token and put
+    // the app in a false-authenticated state where it encrypts messages the host can't read.
+    private var lastQrData: String? = null
     private var sessionId: String? = null
     private var protocolVersion: String = "1.0"
     private var isEncryptionEnabled: Boolean = false
     private var encryptionKey: SecretKeySpec? = null
     
-    // Message queuing for offline support
-    private val messageQueue = ConcurrentLinkedQueue<String>()
+    // Reconnection backoff
     private var maxRetryAttempts = 3
     private var reconnectionAttempts = 0
     private var baseReconnectionDelay = 1000L // 1 second
-    
-    // Message acknowledgment system
-    private val pendingMessages = mutableMapOf<String, PendingMessage>()
-    private val acknowledgmentTimeout = 5000L // 5 seconds
-    private var acknowledgmentJob: Job? = null
-    
-    data class PendingMessage(
-        val messageId: String,
-        val message: String,
-        val timestamp: Long,
-        val retryCount: Int = 0,
-        val maxRetries: Int = 3,
-        val requiresAck: Boolean = true
-    )
-    
+
+    // Confirmed-delivery state for the text field (the load-bearing case). Keys ride the
+    // same enveloped transport but surface only failures, via lastError.
+    private val _textDelivery = MutableStateFlow<DeliveryState>(DeliveryState.Idle)
+    val textDelivery: StateFlow<DeliveryState> = _textDelivery.asStateFlow()
+
+    // In-flight messages keyed by envelope id. Each tracks per-chunk ack state so retry
+    // resends only what is unconfirmed, reusing the same id/seq (the host de-dupes, so a
+    // resend never types twice).
+    private val pending = ConcurrentHashMap<String, Outbound>()
+    private var deliveryMonitorJob: Job? = null
+    // The most recent failed text message, kept so the user can retry it.
+    private var lastFailedText: Outbound? = null
+
+    /** One outbound message and the windowed-delivery state the monitor needs. */
+    private class Outbound(
+        val id: String,
+        val envelopes: List<String>,
+        val isText: Boolean
+    ) {
+        val total: Int = envelopes.size
+        val acked: BooleanArray = BooleanArray(total)
+        // Chunks [0, sentCount) have been sent at least once; this is the window frontier.
+        var sentCount: Int = 0
+        // Last time an ack advanced delivery — drives stall detection (not per-chunk age,
+        // because a chunk's ack latency grows with queue position and the host's typing delay).
+        var lastProgressAt: Long = 0L
+        var stallRetries: Int = 0
+        var failed: Boolean = false
+        val ackedCount: Int get() = acked.count { it }
+        val allAcked: Boolean get() = acked.all { it }
+        // Sent-but-unacked chunks currently occupying the window.
+        val inFlight: Int get() = sentCount - ackedCount
+    }
+
     companion object {
         private const val TAG = "WebSocketViewModel"
         private const val KEEP_ALIVE_INTERVAL = 30000L // 30 seconds
         private const val PING_INTERVAL = 15000L // 15 seconds
         private const val CONNECTION_HEALTH_CHECK_INTERVAL = 60000L // 60 seconds
         private const val MAX_PONG_DELAY = 90000L // 90 seconds (3 ping intervals)
+
+        // Delivery is flow-controlled and progress-driven. At most SEND_WINDOW chunks are
+        // in flight (unacked) at once, so the host is never flooded and sending paces to the
+        // host's apply rate. Failure is declared only on a *stall* — no ack progress for
+        // STALL_TIMEOUT — never on a per-chunk timer, since a chunk deep in a slow (delayed)
+        // paste can legitimately take many seconds to be acked. The monitor exits when
+        // nothing is pending, so it can never spin unbounded.
+        private const val SEND_WINDOW = 8
+        private const val DELIVERY_TICK_MS = 1000L
+        private const val STALL_TIMEOUT_MS = 10000L
+        private const val MAX_STALL_RETRIES = 3
+        // Target per-chunk apply time; chunk size shrinks as the per-character delay grows,
+        // so one chunk always types quickly and acks arrive well within the stall window.
+        private const val CHUNK_BUDGET_MS = 1000
     }
     
     fun connectToServer(qrData: String) {
@@ -144,6 +180,8 @@ class WebSocketViewModel : ViewModel() {
                 
                 // Parse connection data from QR code
                 connectionData = parseConnectionData(qrData)
+                // Remember the full payload (with the pairing secret) so reconnects can re-key.
+                if (connectionData?.pairingSecret != null) lastQrData = qrData
                 val url = connectionData?.url ?: qrData
                 _serverUrl.value = url
                 
@@ -177,6 +215,8 @@ class WebSocketViewModel : ViewModel() {
                             _connectionState.value = ConnectionState.DISCONNECTED
                             stopKeepAlive()
                             stopConnectionHealthCheck()
+                            stopDeliveryMonitor()
+                            failAllPending("Connection lost before delivery was confirmed")
                         }
                     }
                     
@@ -187,6 +227,8 @@ class WebSocketViewModel : ViewModel() {
                             _lastError.value = ex?.message ?: "Unknown error"
                             stopKeepAlive()
                             stopConnectionHealthCheck()
+                            stopDeliveryMonitor()
+                            failAllPending("Connection lost before delivery was confirmed")
                             // Attempt auto-reconnection
                             startAutoReconnection()
                         }
@@ -202,12 +244,22 @@ class WebSocketViewModel : ViewModel() {
             }
         }
     }
-    
+
+    /**
+     * Reconnect to the last server, reusing the stored pairing token so the session
+     * re-authenticates. Falls back to the bare URL only if we never had a token.
+     */
+    fun reconnect() {
+        val target = lastQrData ?: _serverUrl.value
+        if (target.isNotBlank()) connectToServer(target)
+    }
+
     fun disconnect() {
          viewModelScope.launch {
              stopKeepAlive()
              stopConnectionHealthCheck()
-             stopAcknowledgmentMonitoring()
+             stopDeliveryMonitor()
+             failAllPending("Disconnected before delivery was confirmed")
              reconnectionJob?.cancel()
              reconnectionJob = null
              webSocketClient?.close()
@@ -223,189 +275,83 @@ class WebSocketViewModel : ViewModel() {
     }
     
     fun sendText(text: String, typingDelayMs: Int = 0) {
-        if (_connectionState.value != ConnectionState.CONNECTED && 
-            _connectionState.value != ConnectionState.AUTHENTICATED) {
+        if (!isReady()) {
             Log.w(TAG, "Cannot send text - not connected (state: ${_connectionState.value})")
             return
         }
-        
-        viewModelScope.launch {
-            try {
-                val message = JSONObject().apply {
-                    put("command", "type")
-                    put("text", text)
-                    if (typingDelayMs > 0) {
-                        put("delay_ms", typingDelayMs)
-                    }
-                }
-                
-                 sendMessage(message.toString(), requiresAck = false) // Don't require ack to avoid infinite retries
-                 Log.d(TAG, "Sent text: $text (delay: ${typingDelayMs}ms)")
-                
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to send text", e)
-                _lastError.value = "Failed to send text: ${e.message}"
+
+        val chunks = chunkText(text, maxCodePointsForDelay(typingDelayMs))
+        if (chunks.isEmpty()) return
+
+        val id = UUID.randomUUID().toString()
+        val total = chunks.size
+        val envelopes = chunks.mapIndexed { seq, chunk ->
+            val payload = JSONObject().apply {
+                put("text", chunk)
+                if (typingDelayMs > 0) put("delay_ms", typingDelayMs)
             }
+            buildEnvelope(id, seq, total, "type", payload)
+        }
+        val outbound = Outbound(id, envelopes, isText = true)
+        outbound.lastProgressAt = System.currentTimeMillis()
+        pending[id] = outbound
+        lastFailedText = null
+        _textDelivery.value = DeliveryState.Sending(id, 0, total)
+
+        viewModelScope.launch {
+            sendWindow(outbound)
+            Log.d(TAG, "Sending text id=$id in $total chunk(s), window=$SEND_WINDOW (delay ${typingDelayMs}ms)")
+            startDeliveryMonitor()
+        }
+    }
+
+    /** Shrink the chunk size as the per-character delay grows, so one chunk types quickly. */
+    private fun maxCodePointsForDelay(delayMs: Int): Int =
+        if (delayMs <= 0) CHUNK_MAX_CODE_POINTS
+        else (CHUNK_BUDGET_MS / delayMs).coerceIn(10, CHUNK_MAX_CODE_POINTS)
+
+    /** Send chunks until the window is full (in-flight == SEND_WINDOW) or all are sent. */
+    private fun sendWindow(outbound: Outbound) {
+        while (outbound.sentCount < outbound.total && outbound.inFlight < SEND_WINDOW) {
+            sendRaw(outbound.envelopes[outbound.sentCount])
+            outbound.sentCount++
         }
     }
     
-    fun sendKeyPress(key: String) {
-        if (_connectionState.value != ConnectionState.CONNECTED && 
-            _connectionState.value != ConnectionState.AUTHENTICATED) {
-            Log.w(TAG, "Cannot send key press - not connected (state: ${_connectionState.value})")
+    fun sendKeyPress(key: String) =
+        sendKeyInput("key_press", JSONObject().put("key", key), "key press: $key")
+
+    fun sendKeyRelease(key: String) =
+        sendKeyInput("key_release", JSONObject().put("key", key), "key release: $key")
+
+    fun sendKeyCombo(keys: List<String>) =
+        sendKeyInput("key_combo", JSONObject().put("keys", JSONArray(keys)), "key combo: ${keys.joinToString("+")}")
+
+    /** A key tap is a press followed by a release, sent as one one-key combo so it is a single acked message. */
+    fun sendKeyPressAndRelease(key: String) =
+        sendKeyInput("key_combo", JSONObject().put("keys", JSONArray(listOf(key))), "key tap: $key")
+
+    private fun sendKeyInput(type: String, payload: JSONObject, description: String) {
+        if (!isReady()) {
+            Log.w(TAG, "Cannot send $description - not connected (state: ${_connectionState.value})")
             return
         }
-        
+        val id = UUID.randomUUID().toString()
+        val envelope = buildEnvelope(id, 0, 1, type, payload)
+        val outbound = Outbound(id, listOf(envelope), isText = false)
+        outbound.lastProgressAt = System.currentTimeMillis()
+        pending[id] = outbound
+
         viewModelScope.launch {
-            try {
-                val message = JSONObject().apply {
-                    put("command", "key_press")
-                    put("key", key)
-                }
-                
-                 sendMessage(message.toString(), requiresAck = false) // Disabled ack to avoid infinite retries
-                 Log.d(TAG, "Sent key press: $key")
-                
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to send key press", e)
-                _lastError.value = "Failed to send key press: ${e.message}"
-            }
+            sendWindow(outbound)
+            Log.d(TAG, "Sent $description (id=$id)")
+            startDeliveryMonitor()
         }
     }
-    
-    fun sendKeyRelease(key: String) {
-        if (_connectionState.value != ConnectionState.CONNECTED && 
-            _connectionState.value != ConnectionState.AUTHENTICATED) {
-            Log.w(TAG, "Cannot send key release - not connected (state: ${_connectionState.value})")
-            return
-        }
-        
-        viewModelScope.launch {
-            try {
-                val message = JSONObject().apply {
-                    put("command", "key_release")
-                    put("key", key)
-                }
-                
-                 sendMessage(message.toString(), requiresAck = false) // Disabled ack to avoid infinite retries
-                 Log.d(TAG, "Sent key release: $key")
-                
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to send key release", e)
-                _lastError.value = "Failed to send key release: ${e.message}"
-            }
-        }
-    }
-    
-    fun sendHotkey(keys: List<String>) {
-        if (_connectionState.value != ConnectionState.CONNECTED && 
-            _connectionState.value != ConnectionState.AUTHENTICATED) {
-            Log.w(TAG, "Cannot send hotkey - not connected (state: ${_connectionState.value})")
-            return
-        }
-        
-        viewModelScope.launch {
-            try {
-                val keysArray = JSONArray(keys)
-                val message = JSONObject().apply {
-                    put("command", "hotkey")
-                    put("keys", keysArray)
-                }
-                
-                 sendMessage(message.toString(), requiresAck = false)
-                 Log.d(TAG, "Sent hotkey: ${keys.joinToString("+")}")
-                
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to send hotkey", e)
-                _lastError.value = "Failed to send hotkey: ${e.message}"
-            }
-        }
-    }
-    
-    fun sendKeyCombo(keys: List<String>) {
-        if (_connectionState.value != ConnectionState.CONNECTED && 
-            _connectionState.value != ConnectionState.AUTHENTICATED) {
-            Log.w(TAG, "Cannot send key combo - not connected (state: ${_connectionState.value})")
-            return
-        }
-        
-        viewModelScope.launch {
-            try {
-                val keysArray = JSONArray(keys)
-                val message = JSONObject().apply {
-                    put("command", "key_combo")
-                    put("keys", keysArray)
-                }
-                
-                 sendMessage(message.toString(), requiresAck = false)
-                 Log.d(TAG, "Sent key combo: ${keys.joinToString("+")}")
-                
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to send key combo", e)
-                _lastError.value = "Failed to send key combo: ${e.message}"
-            }
-        }
-    }
-    
-    fun sendKeyPressAndRelease(key: String) {
-        if (_connectionState.value != ConnectionState.CONNECTED && 
-            _connectionState.value != ConnectionState.AUTHENTICATED) {
-            Log.w(TAG, "Cannot send key press and release - not connected (state: ${_connectionState.value})")
-            return
-        }
-        
-        viewModelScope.launch {
-            try {
-                // Send key press
-                val pressMessage = JSONObject().apply {
-                    put("command", "key_press")
-                    put("key", key)
-                }
-                 sendMessage(pressMessage.toString(), requiresAck = true) // Key commands require acknowledgment
-                 
-                 // Small delay
-                 kotlinx.coroutines.delay(50)
-                 
-                 // Send key release
-                 val releaseMessage = JSONObject().apply {
-                     put("command", "key_release")
-                     put("key", key)
-                 }
-                 sendMessage(releaseMessage.toString(), requiresAck = true) // Key commands require acknowledgment
-                
-                Log.d(TAG, "Sent key press and release: $key")
-                
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to send key press and release", e)
-                _lastError.value = "Failed to send key press and release: ${e.message}"
-            }
-        }
-    }
-    
-    fun sendMouseClick(x: Int, y: Int, button: String = "left") {
-        if (_connectionState.value != ConnectionState.CONNECTED) {
-            Log.w(TAG, "Cannot send mouse click - not connected")
-            return
-        }
-        
-        viewModelScope.launch {
-            try {
-                val message = JSONObject().apply {
-                    put("command", "mouse_click")
-                    put("x", x)
-                    put("y", y)
-                    put("button", button)
-                }
-                
-                webSocketClient?.send(message.toString())
-                Log.d(TAG, "Sent mouse click: ($x, $y) $button")
-                
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to send mouse click", e)
-                _lastError.value = "Failed to send mouse click: ${e.message}"
-            }
-        }
-    }
+
+    private fun isReady(): Boolean =
+        _connectionState.value == ConnectionState.CONNECTED ||
+        _connectionState.value == ConnectionState.AUTHENTICATED
     
     private fun startKeepAlive() {
         stopKeepAlive() // Stop any existing keep-alive job
@@ -431,7 +377,7 @@ class WebSocketViewModel : ViewModel() {
                                     put("command", "ping")
                                     put("timestamp", System.currentTimeMillis())
                                 }
-                                sendMessage(keepAliveMessage.toString())
+                                sendRaw(keepAliveMessage.toString())
                                 Log.d(TAG, "Sent keep-alive message")
                             } catch (e: Exception) {
                                 Log.w(TAG, "Failed to send keep-alive message", e)
@@ -499,20 +445,11 @@ class WebSocketViewModel : ViewModel() {
     private fun parseConnectionData(qrData: String): ConnectionData? {
         return try {
             val jsonObject = JSONObject(qrData)
-            val authData = if (jsonObject.has("auth")) {
-                val authObj = jsonObject.getJSONObject("auth")
-                AuthData(
-                    token = authObj.getString("token"),
-                    expires = authObj.getLong("expires"),
-                    type = authObj.getString("type")
-                )
-            } else null
-            
             ConnectionData(
                 version = jsonObject.optString("version", "1.0"),
                 url = jsonObject.getString("url"),
                 protocol = jsonObject.optString("protocol", "keybridge-v1"),
-                auth = authData
+                pairingSecret = if (jsonObject.has("key")) jsonObject.getString("key") else null
             )
         } catch (e: Exception) {
             Log.d(TAG, "QR data is not JSON, treating as legacy format: $qrData")
@@ -548,61 +485,29 @@ class WebSocketViewModel : ViewModel() {
             when (jsonObject.optString("type")) {
                 "handshake" -> handleHandshake(jsonObject)
                 "connection_status" -> handleConnectionStatus(jsonObject)
+                "ack" -> handleAck(jsonObject)
                 else -> {
-                     // Handle acknowledgment command first
-                     val command = jsonObject.optString("command", "")
-                     if (command == "ack") {
-                         // This is an acknowledgment from server - don't process further
-                         val ackMessageId = jsonObject.optString("ack_message_id", "")
-                         Log.d(TAG, "Received acknowledgment command for message: $ackMessageId")
-                         return
-                     }
-                     
-                     // Check for message acknowledgments (server responses that need our ack)
-                     val messageId = jsonObject.optString("message_id", "")
-                     val requiresAck = jsonObject.optBoolean("requires_ack", false)
-                     
-                     if (requiresAck && messageId.isNotEmpty()) {
-                         // Send acknowledgment back to server
-                         sendAcknowledgment(messageId)
-                     }
-                     
-                     // Handle responses to our messages (remove from pending)
-                     if (messageId.isNotEmpty() && pendingMessages.containsKey(messageId)) {
-                         Log.d(TAG, "Received response for our message: $messageId")
-                         pendingMessages.remove(messageId)
-                     }
-                     
-                     // Handle authentication responses
+                     // Control-plane responses (pong, errors) are flat status objects.
                      val status = jsonObject.optString("status")
                      when (status) {
                          "success" -> {
-                             val successMessage = jsonObject.optString("message", "")
-                             when (successMessage) {
-                                 "Authentication successful" -> {
-                                     Log.d(TAG, "Authentication successful - updating state to AUTHENTICATED")
-                                     sessionId = jsonObject.optString("session_id")
-                                     _connectionState.value = ConnectionState.AUTHENTICATED
-                                     _lastError.value = ""
-                                 }
-                                 "pong" -> {
-                                     Log.d(TAG, "Received pong response")
-                                     lastPongTime = System.currentTimeMillis()
-                                 }
-                                 "Acknowledgment received" -> {
-                                     Log.d(TAG, "Server acknowledged our acknowledgment")
-                                 }
-                                 else -> {
-                                     Log.d(TAG, "Received success message: $successMessage")
-                                 }
+                             if (jsonObject.optString("message") == "pong") {
+                                 lastPongTime = System.currentTimeMillis()
                              }
                          }
                          "error" -> {
                              val errorMessage = jsonObject.optString("message", "Unknown error")
                              val code = jsonObject.optString("code", "")
-                             Log.e(TAG, "Received error response: $errorMessage (code: $code)")
-                             _connectionState.value = ConnectionState.ERROR
-                             _lastError.value = errorMessage
+                             if (code == "RATE_LIMIT_EXCEEDED") {
+                                 // Transient: the rate-limited chunk was not acked, so the delivery
+                                 // monitor will resend it once the window clears. Don't tear down the
+                                 // connection — a burst of chunks must not look like a fatal error.
+                                 Log.w(TAG, "Rate limited; unacked chunks will be retried")
+                             } else {
+                                 Log.e(TAG, "Received error response: $errorMessage (code: $code)")
+                                 _connectionState.value = ConnectionState.ERROR
+                                 _lastError.value = errorMessage
+                             }
                          }
                          else -> {
                              // Handle regular message responses
@@ -624,11 +529,11 @@ class WebSocketViewModel : ViewModel() {
         }
     }
     
-    private suspend fun handleHandshake(jsonObject: JSONObject) {
+    private fun handleHandshake(jsonObject: JSONObject) {
         try {
             protocolVersion = jsonObject.optString("protocol_version", "1.0")
             sessionId = jsonObject.optString("session_id")
-            
+
             if (jsonObject.has("features")) {
                 val features = jsonObject.getJSONObject("features")
                 _serverFeatures.value = ServerFeatures(
@@ -636,53 +541,34 @@ class WebSocketViewModel : ViewModel() {
                     encryption = features.optBoolean("encryption", false),
                     compression = features.optBoolean("compression", false)
                 )
-                
                 Log.d(TAG, "Server features: ${_serverFeatures.value}")
-                
-                // Set up encryption if supported
+
                 if (_serverFeatures.value.encryption) {
-                    setupEncryption()
+                    val salt = jsonObject.optString("salt", "")
+                    val secret = connectionData?.pairingSecret
+                    if (secret.isNullOrEmpty() || salt.isEmpty()) {
+                        // No pairing secret (e.g. a reconnect via the bare URL, or never scanned)
+                        // or no salt — we cannot derive the session key. Proceeding would send
+                        // messages the host can't read; surface a clear re-pair prompt instead.
+                        Log.e(TAG, "Encrypted server but no pairing secret/salt; cannot derive a session key")
+                        _connectionState.value = ConnectionState.ERROR
+                        _lastError.value = "Pairing required — scan the QR code again to reconnect"
+                        return
+                    }
+                    deriveSessionKey(secret, salt)
                 }
-                
-                // Authenticate if required
-                if (_serverFeatures.value.authentication && connectionData?.auth != null) {
-                    authenticateWithServer()
-                } else {
-                    _connectionState.value = ConnectionState.AUTHENTICATED
-                }
+
+                // Authorization is implicit: possessing the QR secret lets us derive the session
+                // key, and the host will only accept what authenticates under it.
+                _connectionState.value = ConnectionState.AUTHENTICATED
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error handling handshake", e)
-        }
-    }
-    
-    private suspend fun authenticateWithServer() {
-        try {
-            Log.d(TAG, "Starting authentication process")
-            _connectionState.value = ConnectionState.AUTHENTICATING
-            
-            val authToken = connectionData?.auth?.token
-            if (authToken != null) {
-                val authMessage = JSONObject().apply {
-                    put("command", "authenticate")
-                    put("token", authToken)
-                }
-                
-                Log.d(TAG, "Sending authentication request with token: ${authToken.substring(0, minOf(20, authToken.length))}...")
-                sendMessage(authMessage.toString())
-                Log.d(TAG, "Authentication request sent successfully")
-            } else {
-                Log.e(TAG, "No authentication token available")
-                _connectionState.value = ConnectionState.ERROR
-                _lastError.value = "No authentication token available"
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Authentication request failed", e)
             _connectionState.value = ConnectionState.ERROR
-            _lastError.value = "Authentication failed: ${e.message}"
+            _lastError.value = "Failed to establish a secure session"
         }
     }
-    
+
     private suspend fun handleConnectionStatus(jsonObject: JSONObject) {
         val status = jsonObject.optString("status")
         when (status) {
@@ -696,54 +582,19 @@ class WebSocketViewModel : ViewModel() {
         }
     }
     
-    private fun setupEncryption() {
-        try {
-            // Use the exact same key derivation as the server
-            // Server uses PBKDF2HMAC with SHA256, salt="keybridge_salt", 100000 iterations
-            val secretKey = "keybridge-secret-key-change-in-production"
-            val salt = "keybridge_salt"
-            
-            // Derive key using PBKDF2 (same as server)
-            val derivedKey = deriveKey(secretKey, salt, 100000, 32)
-            
-            // Create AES-256 key from derived key
-            encryptionKey = SecretKeySpec(derivedKey, "AES")
-            
-            isEncryptionEnabled = true
-            Log.d(TAG, "AES-GCM encryption enabled")
-            Log.d(TAG, "Secret key: $secretKey")
-            Log.d(TAG, "Salt: $salt")
-            Log.d(TAG, "Derived key (hex): ${derivedKey.joinToString("") { "%02x".format(it) }}")
-            Log.d(TAG, "Derived key length: ${derivedKey.size} bytes")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to setup encryption", e)
-            isEncryptionEnabled = false
-        }
-    }
-    
-    private fun deriveKey(password: String, salt: String, iterations: Int, keyLength: Int): ByteArray {
-        // Use Android's built-in PBKDF2 implementation
-        // Note: PBKDF2WithHmacSHA256 should match Python's PBKDF2HMAC with SHA256
-        val secretKeyFactory = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
-        val keySpec = javax.crypto.spec.PBEKeySpec(
-            password.toCharArray(),
-            salt.toByteArray(),
-            iterations,
-            keyLength * 8 // keyLength in bits
-        )
-        val secretKey = secretKeyFactory.generateSecret(keySpec)
-        val keyBytes = secretKey.encoded
-        
-        // Log key derivation details for debugging
-        Log.d(TAG, "PBKDF2 key derivation:")
-        Log.d(TAG, "Password: $password")
-        Log.d(TAG, "Salt: $salt")
-        Log.d(TAG, "Iterations: $iterations")
-        Log.d(TAG, "Key length requested: $keyLength bytes")
-        Log.d(TAG, "Key length generated: ${keyBytes.size} bytes")
-        Log.d(TAG, "Key (hex): ${keyBytes.joinToString("") { "%02x".format(it) }}")
-        
-        return keyBytes
+    /**
+     * Derive this session's AES-256 key = HMAC-SHA256(pairingSecret, salt), matching the host.
+     * The pairing secret came from the QR; the salt came from the handshake. Nothing secret is
+     * logged.
+     */
+    private fun deriveSessionKey(pairingSecretB64: String, saltB64: String) {
+        val secret = Base64.decode(pairingSecretB64, Base64.URL_SAFE or Base64.NO_PADDING)
+        val salt = Base64.decode(saltB64, Base64.URL_SAFE or Base64.NO_PADDING)
+        val mac = javax.crypto.Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(secret, "HmacSHA256"))
+        encryptionKey = SecretKeySpec(mac.doFinal(salt), "AES")
+        isEncryptionEnabled = true
+        Log.d(TAG, "Session key derived")
     }
     
     private fun encryptMessage(message: String): String? {
@@ -765,11 +616,9 @@ class WebSocketViewModel : ViewModel() {
             // Combine nonce + ciphertext (tag is appended by doFinal)
             val encryptedData = nonce + ciphertext
             
-            // Encode as base64
-            val encrypted = Base64.encodeToString(encryptedData, Base64.URL_SAFE or Base64.NO_PADDING)
-            Log.d(TAG, "Encrypted message length: ${encrypted.length}")
-            Log.d(TAG, "Encrypted message preview: ${encrypted.substring(0, minOf(50, encrypted.length))}")
-            encrypted
+            // Encode as base64 (URL-safe, no padding, no line wrapping — matches the host).
+            // NO_WRAP is essential: without it Android inserts a newline every 76 chars.
+            Base64.encodeToString(encryptedData, Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP)
         } catch (e: Exception) {
             Log.e(TAG, "Encryption failed", e)
             message
@@ -779,13 +628,10 @@ class WebSocketViewModel : ViewModel() {
     private fun decryptMessage(encryptedMessage: String): String? {
         return try {
             if (!isEncryptionEnabled || encryptionKey == null) return encryptedMessage
-            
-            Log.d(TAG, "Attempting to decrypt message: ${encryptedMessage.substring(0, minOf(50, encryptedMessage.length))}...")
-            
+
             // Decode from base64
             val encryptedData = Base64.decode(encryptedMessage, Base64.URL_SAFE or Base64.NO_PADDING)
-            Log.d(TAG, "Decoded encrypted data length: ${encryptedData.size} bytes")
-            
+
             // Extract nonce (first 12 bytes) and ciphertext with tag (rest)
             val nonce = encryptedData.sliceArray(0..11)
             val ciphertextWithTag = encryptedData.sliceArray(12 until encryptedData.size)
@@ -804,119 +650,154 @@ class WebSocketViewModel : ViewModel() {
         }
     }
     
-     private suspend fun sendMessage(message: String, requiresAck: Boolean = false) {
-         try {
-             val messageId = if (requiresAck) {
-                 java.util.UUID.randomUUID().toString()
-             } else null
-             
-             // Add message ID and acknowledgment flag if required
-             val messageToSend = if (requiresAck && messageId != null) {
-                 val jsonMessage = JSONObject(message)
-                 jsonMessage.put("message_id", messageId)
-                 jsonMessage.put("requires_ack", true)
-                 
-                 val messageWithAck = jsonMessage.toString()
-                 
-                 // Store for retry mechanism
-                 val pendingMessage = PendingMessage(
-                     messageId = messageId,
-                     message = messageWithAck,
-                     timestamp = System.currentTimeMillis(),
-                     requiresAck = true
-                 )
-                 pendingMessages[messageId] = pendingMessage
-                 
-                 // Start acknowledgment monitoring if not already running
-                 startAcknowledgmentMonitoring()
-                 
-                 messageWithAck
-             } else {
-                 message
-             }
-             
-             // Encrypt if needed
-             val finalMessage = if (isEncryptionEnabled && _connectionState.value == ConnectionState.AUTHENTICATED) {
-                 encryptMessage(messageToSend) ?: messageToSend
-             } else {
-                 messageToSend
-             }
-             
-             webSocketClient?.send(finalMessage)
-             Log.d(TAG, "Message sent${if (requiresAck) " (requires ack: $messageId)" else ""}")
-             
-         } catch (e: Exception) {
-             Log.e(TAG, "Failed to send message", e)
-             throw e
-         }
-     }
-     
-     private suspend fun sendAcknowledgment(messageId: String) {
-         try {
-             val ackMessage = JSONObject().apply {
-                 put("command", "ack")
-                 put("ack_message_id", messageId)
-             }
-             
-             sendMessage(ackMessage.toString(), requiresAck = false)
-             Log.d(TAG, "Sent acknowledgment for message: $messageId")
-         } catch (e: Exception) {
-             Log.e(TAG, "Failed to send acknowledgment", e)
-         }
-     }
-     
-     private fun startAcknowledgmentMonitoring() {
-         if (acknowledgmentJob?.isActive == true) return
-         
-         acknowledgmentJob = viewModelScope.launch {
-             while (_connectionState.value == ConnectionState.AUTHENTICATED || 
-                    _connectionState.value == ConnectionState.CONNECTED) {
-                 delay(1000) // Check every second
-                 
-                 val currentTime = System.currentTimeMillis()
-                 val expiredMessages = pendingMessages.values.filter { 
-                     currentTime - it.timestamp > acknowledgmentTimeout 
-                 }
-                 
-                 for (expiredMessage in expiredMessages) {
-                     if (expiredMessage.retryCount < expiredMessage.maxRetries) {
-                         // Retry the message
-                         val retryMessage = expiredMessage.copy(
-                             retryCount = expiredMessage.retryCount + 1,
-                             timestamp = currentTime
-                         )
-                         pendingMessages[expiredMessage.messageId] = retryMessage
-                         
-                         try {
-                             val finalMessage = if (isEncryptionEnabled && _connectionState.value == ConnectionState.AUTHENTICATED) {
-                                 encryptMessage(expiredMessage.message) ?: expiredMessage.message
-                             } else {
-                                 expiredMessage.message
-                             }
-                             
-                             webSocketClient?.send(finalMessage)
-                             Log.w(TAG, "Retrying message ${expiredMessage.messageId} (attempt ${retryMessage.retryCount})")
-                         } catch (e: Exception) {
-                             Log.e(TAG, "Failed to retry message ${expiredMessage.messageId}", e)
-                         }
-                     } else {
-                         // Max retries reached, remove from pending
-                         pendingMessages.remove(expiredMessage.messageId)
-                         Log.e(TAG, "Message ${expiredMessage.messageId} failed after ${expiredMessage.maxRetries} retries")
-                         
-                         // Optionally notify user of failed message
-                         _lastError.value = "Message delivery failed after retries"
-                     }
-                 }
-             }
-         }
-     }
-     
-     private fun stopAcknowledgmentMonitoring() {
-         acknowledgmentJob?.cancel()
-         acknowledgmentJob = null
-         pendingMessages.clear()
-     }
+    /** Build a serialized input envelope (plaintext; encryption is applied at send time). */
+    private fun buildEnvelope(id: String, seq: Int, total: Int, type: String, payload: JSONObject): String =
+        JSONObject().apply {
+            put("v", PROTOCOL_VERSION)
+            put("id", id)
+            put("seq", seq)
+            put("total", total)
+            put("type", type)
+            put("payload", payload)
+        }.toString()
+
+    /** Encrypt (if the session is encrypted) and send one already-serialized message. */
+    private fun sendRaw(message: String) {
+        val finalMessage = if (isEncryptionEnabled && _connectionState.value == ConnectionState.AUTHENTICATED) {
+            encryptMessage(message) ?: message
+        } else {
+            message
+        }
+        webSocketClient?.send(finalMessage)
+    }
+
+    /** Apply a host acknowledgement to the matching in-flight message. */
+    private fun handleAck(json: JSONObject) {
+        val id = json.optString("id")
+        val seq = json.optInt("seq", -1)
+        val outbound = pending[id] ?: return
+        if (seq < 0 || seq >= outbound.total) return
+
+        if (json.optString("status") == "ok") {
+            if (!outbound.acked[seq]) {
+                outbound.acked[seq] = true
+                // Progress: refresh the stall timer and restore the full stall budget.
+                outbound.lastProgressAt = System.currentTimeMillis()
+                outbound.stallRetries = 0
+            }
+            if (outbound.allAcked) {
+                pending.remove(id)
+                if (outbound.isText) _textDelivery.value = DeliveryState.Delivered(id)
+                Log.d(TAG, "Delivered id=$id")
+            } else {
+                sendWindow(outbound)  // an ack freed a window slot; send the next chunk(s)
+                if (outbound.isText) _textDelivery.value = DeliveryState.Sending(id, outbound.ackedCount, outbound.total)
+            }
+        } else {
+            // An error ack means the host rejected this input; retrying the same bytes
+            // will not help, so fail without retry.
+            val reason = json.optString("error", "Server rejected the input")
+            failMessage(outbound, reason, retryable = false)
+        }
+    }
+
+    private fun failMessage(outbound: Outbound, reason: String, retryable: Boolean) {
+        if (outbound.failed) return
+        outbound.failed = true
+        pending.remove(outbound.id)
+        if (outbound.isText) {
+            lastFailedText = outbound
+            _textDelivery.value = DeliveryState.Failed(outbound.id, reason, retryable)
+        } else {
+            _lastError.value = reason
+        }
+        Log.w(TAG, "Failed id=${outbound.id}: $reason (retryable=$retryable)")
+    }
+
+    private fun failAllPending(reason: String) {
+        for (outbound in pending.values.toList()) {
+            failMessage(outbound, reason, retryable = true)
+        }
+    }
+
+    /**
+     * Stall-driven retry monitor. While acks keep advancing, the message is healthy no matter
+     * how slowly the host types. Only when no ack arrives for [STALL_TIMEOUT_MS] does it resend
+     * the in-flight (unacked) chunks — same id/seq, so the host de-dupes — at most
+     * [MAX_STALL_RETRIES] times before failing. Exits when nothing is pending or the connection
+     * drops, so it cannot spin unbounded.
+     */
+    private fun startDeliveryMonitor() {
+        if (deliveryMonitorJob?.isActive == true) return
+
+        deliveryMonitorJob = viewModelScope.launch {
+            while (pending.isNotEmpty() && isReady()) {
+                delay(DELIVERY_TICK_MS)
+                val now = System.currentTimeMillis()
+                for (outbound in pending.values.toList()) {
+                    if (outbound.failed) continue
+                    // Healthy as long as acks keep advancing; only a true stall is a problem.
+                    if (now - outbound.lastProgressAt < STALL_TIMEOUT_MS) continue
+
+                    if (outbound.stallRetries >= MAX_STALL_RETRIES) {
+                        failMessage(outbound, "Delivery stalled (no response from the PC)", retryable = true)
+                        continue
+                    }
+                    outbound.stallRetries++
+                    outbound.lastProgressAt = now
+                    // Resend only the in-flight (sent-but-unacked) chunks — at most the window
+                    // size, not the whole message. The host de-dupes any it already applied.
+                    for (seq in 0 until outbound.sentCount) {
+                        if (!outbound.acked[seq]) {
+                            try {
+                                sendRaw(outbound.envelopes[seq])
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Stall resend failed for id=${outbound.id}#$seq", e)
+                            }
+                        }
+                    }
+                    Log.w(TAG, "Stall resend id=${outbound.id} (attempt ${outbound.stallRetries})")
+                }
+            }
+            // The connection dropped with chunks still unconfirmed: keep the text, show failure.
+            if (!isReady()) failAllPending("Connection lost before delivery was confirmed")
+        }
+    }
+
+    private fun stopDeliveryMonitor() {
+        deliveryMonitorJob?.cancel()
+        deliveryMonitorJob = null
+    }
+
+    /** Re-send the unconfirmed chunks of the last failed text message, reusing its id/seq. */
+    fun retryTextDelivery() {
+        val outbound = lastFailedText ?: return
+        if (!isReady()) {
+            _lastError.value = "Not connected"
+            return
+        }
+        outbound.failed = false
+        outbound.stallRetries = 0
+        outbound.lastProgressAt = System.currentTimeMillis()
+        pending[outbound.id] = outbound
+        lastFailedText = null
+        _textDelivery.value = DeliveryState.Sending(outbound.id, outbound.ackedCount, outbound.total)
+
+        viewModelScope.launch {
+            // Resend the in-flight chunks, then continue filling the window with any not-yet-sent.
+            for (seq in 0 until outbound.sentCount) {
+                if (!outbound.acked[seq]) sendRaw(outbound.envelopes[seq])
+            }
+            sendWindow(outbound)
+            startDeliveryMonitor()
+        }
+    }
+
+    /** Called by the UI once it has reacted to a terminal delivery state, so it fires once. */
+    fun consumeTextDelivery() {
+        _textDelivery.value = DeliveryState.Idle
+        lastFailedText = null
+    }
     
     private suspend fun startAutoReconnection() {
         reconnectionJob?.cancel()
@@ -943,11 +824,13 @@ class WebSocketViewModel : ViewModel() {
                 }
                 
                 try {
-                    val url = connectionData?.url ?: _serverUrl.value
-                    if (url.isNotBlank()) {
+                    // Reconnect with the full pairing payload (URL + token) so we re-authenticate;
+                    // falling back to the bare URL only if we never had a token.
+                    val target = lastQrData ?: connectionData?.url ?: _serverUrl.value
+                    if (target.isNotBlank()) {
                         // Reset state before reconnecting
                         _connectionState.value = ConnectionState.DISCONNECTED
-                        connectToServer(url)
+                        connectToServer(target)
                     }
                     break
                 } catch (e: Exception) {

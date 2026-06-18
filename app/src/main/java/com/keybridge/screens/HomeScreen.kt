@@ -59,10 +59,17 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
+import com.keybridge.R
+import com.keybridge.protocol.DeliveryState
+import com.keybridge.ui.rememberReducedMotion
 import com.keybridge.viewmodel.PreferencesViewModel
 import com.keybridge.viewmodel.WebSocketViewModel
 import com.keybridge.viewmodel.WebSocketViewModel.ServerFeatures
@@ -87,6 +94,7 @@ fun HomeScreen(
     val connectionState by viewModel.connectionState.collectAsState()
     val lastError by viewModel.lastError.collectAsState()
     val serverFeatures by viewModel.serverFeatures.collectAsState()
+    val textDelivery by viewModel.textDelivery.collectAsState()
     val hapticFeedback by preferencesViewModel.hapticFeedback.collectAsState()
     val typingDelay by preferencesViewModel.typingDelay.collectAsState()
     val keyRepeatRate by preferencesViewModel.keyRepeatRate.collectAsState()
@@ -164,17 +172,17 @@ fun HomeScreen(
                 lastError = lastError,
                 onConnectClick = { navController.navigate("qr_scanner") },
                 onClearError = { viewModel.clearError() },
-                onDisconnect = { 
+                onDisconnect = {
                     viewModel.disconnect()
                     scope.launch {
-                        snackbarHostState.showSnackbar("Disconnected from server")
+                        snackbarHostState.showSnackbar(context.getString(R.string.snackbar_disconnected_from_server))
                     }
                 },
                 onReconnect = {
                     if (serverUrl.isNotBlank()) {
-                        viewModel.connectToServer(serverUrl)
+                        viewModel.reconnect()
                         scope.launch {
-                            snackbarHostState.showSnackbar("Reconnecting...")
+                            snackbarHostState.showSnackbar(context.getString(R.string.snackbar_reconnecting))
                         }
                     }
                 },
@@ -182,21 +190,31 @@ fun HomeScreen(
                 serverFeatures = serverFeatures
             )
 
+            // Clear the field only once the host has confirmed delivery — never on send.
+            LaunchedEffect(textDelivery) {
+                val state = textDelivery
+                if (state is DeliveryState.Delivered) {
+                    textInput = ""
+                    viewModel.consumeTextDelivery()
+                    snackbarHostState.showSnackbar(context.getString(R.string.snackbar_delivered))
+                }
+            }
+
             // Text input section
             TextInputSection(
                 textInput = textInput,
                 onTextChange = { textInput = it },
-                onSendText = { 
+                onSendText = {
                     if (isConnected && textInput.isNotBlank()) {
-                        viewModel.sendText(textInput, typingDelay.toInt())
                         performHapticFeedback()
-                        val sentText = textInput
-                        textInput = ""
-                        scope.launch {
-                            snackbarHostState.showSnackbar("Sent: $sentText")
-                        }
+                        viewModel.sendText(textInput, typingDelay.toInt())
                     }
                 },
+                onRetry = {
+                    performHapticFeedback()
+                    viewModel.retryTextDelivery()
+                },
+                deliveryState = textDelivery,
                 isConnected = isConnected
             )
 
@@ -231,33 +249,17 @@ fun HomeScreen(
                     }
                     performHapticFeedback()
                 },
-                onKeyPress = { key -> 
+                onKeyPress = { key ->
                     if (isConnected) {
                         performHapticFeedback()
                         if (key.action.contains("+")) {
                             val keys = key.action.split("+")
                             viewModel.sendKeyCombo(keys)
                         } else {
-                            // Apply any toggled modifiers
-                            val modifiers = mutableListOf<String>()
-                            if (ctrlToggled) modifiers.add("ctrl")
-                            if (altToggled) modifiers.add("alt")
-                            if (shiftToggled) modifiers.add("shift")
-                            if (winToggled) modifiers.add("cmd")
-                            
-                            if (modifiers.isNotEmpty()) {
-                                // Send as key combo with modifiers
-                                val allKeys = modifiers + key.action
-                                viewModel.sendKeyCombo(allKeys)
-                                // Release all modifiers after combo
-                                ctrlToggled = false
-                                altToggled = false
-                                shiftToggled = false
-                                winToggled = false
-                                modifiers.forEach { viewModel.sendKeyRelease(it) }
-                            } else {
-                                viewModel.sendKeyPressAndRelease(key.action)
-                            }
+                            // Toggled modifiers are already held down on the host and stay held
+                            // until tapped off (the "tap to hold" contract). Just send the key —
+                            // the held modifiers apply to it and remain held for the next key.
+                            viewModel.sendKeyPressAndRelease(key.action)
                         }
                     }
                 },
@@ -284,9 +286,10 @@ fun ConnectionStatusCard(
     serverUrl: String,
     serverFeatures: ServerFeatures
 ) {
-    // Pulse animation for connection indicator
+    // Pulse animation for connection indicator (held static when the user minimises motion).
+    val reducedMotion = rememberReducedMotion()
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val pulseScale by infiniteTransition.animateFloat(
+    val animatedScale by infiniteTransition.animateFloat(
         initialValue = 1f,
         targetValue = 1.3f,
         animationSpec = infiniteRepeatable(
@@ -295,7 +298,7 @@ fun ConnectionStatusCard(
         ),
         label = "pulseScale"
     )
-    val pulseAlpha by infiniteTransition.animateFloat(
+    val animatedAlpha by infiniteTransition.animateFloat(
         initialValue = 1f,
         targetValue = 0.5f,
         animationSpec = infiniteRepeatable(
@@ -304,6 +307,8 @@ fun ConnectionStatusCard(
         ),
         label = "pulseAlpha"
     )
+    val pulseScale = if (reducedMotion) 1f else animatedScale
+    val pulseAlpha = if (reducedMotion) 1f else animatedAlpha
     
     Card(
         modifier = Modifier
@@ -349,12 +354,11 @@ fun ConnectionStatusCard(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = when (connectionState) {
-                        WebSocketViewModel.ConnectionState.DISCONNECTED -> "Disconnected"
-                        WebSocketViewModel.ConnectionState.CONNECTING -> "Connecting..."
-                        WebSocketViewModel.ConnectionState.CONNECTED -> "Connected"
-                        WebSocketViewModel.ConnectionState.AUTHENTICATING -> "Authenticating..."
-                        WebSocketViewModel.ConnectionState.AUTHENTICATED -> "Ready ✓"
-                        WebSocketViewModel.ConnectionState.ERROR -> "Connection Error"
+                        WebSocketViewModel.ConnectionState.DISCONNECTED -> stringResource(R.string.status_disconnected)
+                        WebSocketViewModel.ConnectionState.CONNECTING -> stringResource(R.string.status_connecting)
+                        WebSocketViewModel.ConnectionState.CONNECTED -> stringResource(R.string.status_connected)
+                        WebSocketViewModel.ConnectionState.AUTHENTICATED -> stringResource(R.string.status_ready)
+                        WebSocketViewModel.ConnectionState.ERROR -> stringResource(R.string.status_connection_error)
                     },
                     style = MaterialTheme.typography.titleMedium,
                     color = connectionColor,
@@ -384,7 +388,7 @@ fun ConnectionStatusCard(
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Scan QR", fontWeight = FontWeight.Medium)
+                        Text(stringResource(R.string.button_scan_qr_short), fontWeight = FontWeight.Medium)
                     }
                     
                     // Quick reconnect button (only if we have a previous URL)
@@ -401,7 +405,7 @@ fun ConnectionStatusCard(
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Reconnect", fontWeight = FontWeight.Medium)
+                            Text(stringResource(R.string.button_reconnect), fontWeight = FontWeight.Medium)
                         }
                     }
                 }
@@ -432,7 +436,7 @@ fun ConnectionStatusCard(
                                     if (serverFeatures.authentication) {
                                         AssistChip(
                                             onClick = {},
-                                            label = { Text("Auth", style = MaterialTheme.typography.labelSmall) },
+                                            label = { Text(stringResource(R.string.feature_chip_auth), style = MaterialTheme.typography.labelSmall) },
                                             leadingIcon = { 
                                                 Icon(
                                                     Icons.Filled.Lock, 
@@ -447,7 +451,7 @@ fun ConnectionStatusCard(
                                         Spacer(modifier = Modifier.width(6.dp))
                                         AssistChip(
                                             onClick = {},
-                                            label = { Text("Encrypted", style = MaterialTheme.typography.labelSmall) },
+                                            label = { Text(stringResource(R.string.feature_chip_encrypted), style = MaterialTheme.typography.labelSmall) },
                                             leadingIcon = { 
                                                 Icon(
                                                     Icons.Filled.Shield, 
@@ -478,7 +482,7 @@ fun ConnectionStatusCard(
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Disconnect")
+                    Text(stringResource(R.string.button_disconnect))
                 }
             }
             
@@ -514,7 +518,7 @@ fun ConnectionStatusCard(
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.Close,
-                                contentDescription = "Clear error",
+                                contentDescription = stringResource(R.string.cd_clear_error),
                                 tint = MaterialTheme.colorScheme.onErrorContainer,
                                 modifier = Modifier.size(16.dp)
                             )
@@ -532,8 +536,12 @@ fun TextInputSection(
     textInput: String,
     onTextChange: (String) -> Unit,
     onSendText: () -> Unit,
+    onRetry: () -> Unit,
+    deliveryState: DeliveryState,
     isConnected: Boolean
 ) {
+    val isSending = deliveryState is DeliveryState.Sending
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp)
@@ -551,26 +559,94 @@ fun TextInputSection(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Text Input",
+                    text = stringResource(R.string.text_input_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
             }
-            
+
             OutlinedTextField(
                 value = textInput,
                 onValueChange = onTextChange,
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Type text to send...") },
+                placeholder = { Text(stringResource(R.string.text_input_placeholder_dots)) },
                 enabled = isConnected,
                 minLines = 2,
                 maxLines = 4,
                 shape = RoundedCornerShape(12.dp)
             )
-            
+
+            // Delivery feedback: progress while sending, failure + retry on failure.
+            when (deliveryState) {
+                is DeliveryState.Sending -> {
+                    val total = deliveryState.totalChunks
+                    val progress = if (total > 0) deliveryState.ackedChunks.toFloat() / total else 0f
+                    val sendingPartsCd = stringResource(
+                        R.string.delivery_sending_parts_cd,
+                        deliveryState.ackedChunks,
+                        total
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        LinearProgressIndicator(
+                            progress = { progress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .semantics {
+                                    contentDescription = sendingPartsCd
+                                }
+                        )
+                        Text(
+                            text = if (total > 1) {
+                                stringResource(
+                                    R.string.delivery_sending_progress,
+                                    deliveryState.ackedChunks,
+                                    total
+                                )
+                            } else {
+                                stringResource(R.string.delivery_sending)
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                is DeliveryState.Failed -> {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = deliveryState.reason,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (deliveryState.retryable) {
+                            TextButton(onClick = onRetry, enabled = isConnected) {
+                                Icon(
+                                    imageVector = Icons.Filled.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(stringResource(R.string.button_retry))
+                            }
+                        }
+                    }
+                }
+                else -> {}
+            }
+
             Button(
                 onClick = onSendText,
-                enabled = isConnected && textInput.isNotBlank(),
+                enabled = isConnected && textInput.isNotBlank() && !isSending,
                 modifier = Modifier.align(Alignment.End),
                 shape = RoundedCornerShape(12.dp)
             ) {
@@ -580,7 +656,10 @@ fun TextInputSection(
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Send", fontWeight = FontWeight.Medium)
+                Text(
+                    if (isSending) stringResource(R.string.delivery_sending) else stringResource(R.string.button_send),
+                    fontWeight = FontWeight.Medium
+                )
             }
         }
     }
@@ -731,14 +810,14 @@ fun KeyboardControlsSection(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Keyboard Controls",
+                    text = stringResource(R.string.keyboard_controls_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
             }
-            
+
             // Modifier Keys (Toggleable)
-            KeySection(title = "Modifiers (tap to hold, tap again to release)") {
+            KeySection(title = stringResource(R.string.section_modifiers)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -757,7 +836,7 @@ fun KeyboardControlsSection(
             }
             
             // Navigation Keys
-            KeySection(title = "Navigation") {
+            KeySection(title = stringResource(R.string.section_navigation)) {
                 KeyGridRow(
                     keys = navigationKeys,
                     isConnected = isConnected,
@@ -776,7 +855,7 @@ fun KeyboardControlsSection(
             }
             
             // Action Keys
-            KeySection(title = "Actions") {
+            KeySection(title = stringResource(R.string.section_actions)) {
                 KeyGridRow(
                     keys = actionKeys,
                     isConnected = isConnected,
@@ -787,7 +866,7 @@ fun KeyboardControlsSection(
             }
             
             // Media Keys
-            KeySection(title = "Media Controls") {
+            KeySection(title = stringResource(R.string.section_media_controls)) {
                 KeyGridRow(
                     keys = mediaKeys,
                     isConnected = isConnected,
@@ -798,7 +877,7 @@ fun KeyboardControlsSection(
             }
             
             // System/Lock Keys
-            KeySection(title = "System Keys") {
+            KeySection(title = stringResource(R.string.section_system_keys)) {
                 KeyGridRow(
                     keys = systemKeys,
                     isConnected = isConnected,
@@ -809,7 +888,7 @@ fun KeyboardControlsSection(
             }
             
             // Function Keys
-            KeySection(title = "Function Keys") {
+            KeySection(title = stringResource(R.string.function_keys_title)) {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(6),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -830,7 +909,7 @@ fun KeyboardControlsSection(
             }
             
             // Common Hotkeys
-            KeySection(title = "Quick Actions") {
+            KeySection(title = stringResource(R.string.section_quick_actions)) {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(3),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -873,7 +952,8 @@ fun KeySection(
             text = title,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.Medium
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.semantics { heading() }
         )
         content()
     }
@@ -916,10 +996,11 @@ fun KeyButton(
     var isPressed by remember { mutableStateOf(false) }
     var isLongPressing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    
+    val reducedMotion = rememberReducedMotion()
+
     val scale by animateFloatAsState(
         targetValue = if (isPressed || isLongPressing) 0.92f else 1f,
-        animationSpec = spring(dampingRatio = 0.4f, stiffness = 400f),
+        animationSpec = if (reducedMotion) snap() else spring(dampingRatio = 0.4f, stiffness = 400f),
         label = "keyScale"
     )
     
@@ -1029,9 +1110,10 @@ fun ToggleableKeyButton(
     onToggle: () -> Unit,
     enabled: Boolean
 ) {
+    val reducedMotion = rememberReducedMotion()
     val scale by animateFloatAsState(
         targetValue = if (isToggled) 0.95f else 1f,
-        animationSpec = spring(dampingRatio = 0.4f, stiffness = 400f),
+        animationSpec = if (reducedMotion) snap() else spring(dampingRatio = 0.4f, stiffness = 400f),
         label = "toggleScale"
     )
     

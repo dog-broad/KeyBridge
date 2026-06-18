@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Single-colour silhouette for themed (monochrome) launcher icons:
+         outlined keycap holding the K, so the mark stays legible when tinted. -->
+    <group android:scaleX="0.19" android:scaleY="0.19"
+        android:translateX="54" android:translateY="54">
+        <group android:translateX="-256" android:translateY="-256">
+
+            <!-- Keycap outline -->
+            <path android:strokeColor="#000000" android:strokeWidth="26" android:fillColor="#00000000"
+                android:pathData="M167,104 H345 A66,66 0 0 1 411,170 V332 A66,66 0 0 1 345,398 H167 A66,66 0 0 1 101,332 V170 A66,66 0 0 1 167,104 Z"/>
+
+            <!-- The "K" -->
+            <path android:strokeColor="#000000" android:strokeWidth="38"
+                android:strokeLineCap="round" android:strokeLineJoin="round"
+                android:pathData="M205,178 L205,330"/>
+            <path android:strokeColor="#000000" android:strokeWidth="38"
+                android:strokeLineCap="round" android:strokeLineJoin="round"
+                android:pathData="M205,256 L302,178"/>
+            <path android:strokeColor="#000000" android:strokeWidth="38"
+                android:strokeLineCap="round" android:strokeLineJoin="round"
+                android:pathData="M205,256 L302,330"/>
+        </group>
+    </group>
+</vector>
