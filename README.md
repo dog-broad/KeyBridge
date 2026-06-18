@@ -1,236 +1,105 @@
-<div align="center">
+<p align="center">
+  <img src="docs/media/hero.png" alt="KeyBridge — your phone is now your PC's keyboard" width="860">
+</p>
 
-# KeyBridge Android App
+<p align="center">
+  Type on your PC from your phone. Pair by QR, send text, hotkeys, and media keys —
+  <br>encrypted end to end, and confirmed the moment they land.
+</p>
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Android](https://img.shields.io/badge/Android-7.0+-green.svg)](https://developer.android.com/)
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-purple.svg)](https://kotlinlang.org/)
-
-A modern Android application that allows you to remotely control your computer's keyboard through WebSocket communication. Built with Jetpack Compose and Material Design 3.
-
----
-
-### 🖥️ **This app requires the KeyBridge Server**
-
-**[➡️ Get KeyBridge Server](https://github.com/dog-broad/keybridge-server)**
-
-Both components work together to provide secure remote keyboard control.
+<p align="center">
+  <b>Android client.</b> Needs the desktop host →
+  <a href="https://github.com/dog-broad/keybridge-server">keybridge-server</a>
+</p>
 
 ---
 
-</div>
+KeyBridge turns your phone into a real input device for your computer. Scan the QR your
+desktop shows, and the keystrokes you send are typed on the PC as if they came from a
+keyboard plugged into it — full text, modifier combos, function keys, and media controls.
 
-## Features
+It's built around one rule: **input you send is never assumed delivered.** The phone holds
+your text until the host acknowledges it, shows progress while long pastes stream across,
+and surfaces failure instead of pretending a dropped message went through.
 
-### 🎨 Modern UI/UX
-- **Material Design 3** with dynamic color theming
-- **Light/Dark theme** support with manual toggle
-- **Smooth animations** including pulse indicators and press effects
-- **Minimalist layout** with intuitive navigation
-- **Accessibility support** with proper content descriptions
+## How it works
 
-### ⌨️ Comprehensive Keyboard Control
-- **Text Input**: Send any text directly to your computer
-- **Modifier Keys**: Ctrl, Alt, Shift, Win/Cmd
-- **Navigation Keys**: Arrow keys, Home, End, Page Up/Down, Insert
-- **Action Keys**: Tab, Enter, Space, Backspace, Delete, Escape
-- **Function Keys**: F1-F12 support
-- **System Keys**: Caps Lock, Num Lock, Scroll Lock, Menu, Pause
-- **Media Controls**: Play/Pause, Next/Previous Track, Volume Up/Down/Mute
-- **Print Screen**: Screenshot support
-- **Common Hotkeys**: Copy, Paste, Cut, Undo, Redo, Select All, Save, Find, Alt+Tab
+<table>
+<tr>
+  <td width="33%" valign="top"><img src="docs/media/pair.png" alt="Pairing screen showing a detected server"></td>
+  <td width="33%" valign="top"><img src="docs/media/deliver.png" alt="Sending text with live per-chunk progress"></td>
+  <td width="33%" valign="top"><img src="docs/media/control.png" alt="Keyboard control grid — modifiers, media, function keys"></td>
+</tr>
+<tr>
+  <td valign="top"><b>1 · Pair</b><br>Point the camera at the host's QR. The connection is set up from what's in the code — nothing is typed in by hand.</td>
+  <td valign="top"><b>2 · Send</b><br>Type and send. Long text streams in chunks with a live progress bar; the field clears only once the host confirms it.</td>
+  <td valign="top"><b>3 · Control</b><br>Modifiers, navigation, actions, media keys, F1–F12, and one-tap hotkeys like Copy, Paste, and Alt+Tab.</td>
+</tr>
+</table>
 
-### 🔐 Secure Connection
-- **AES-256-GCM Encryption** for all communications after the handshake
-- **Per-session key** derived (`HMAC-SHA256`) from a pairing secret carried only in the QR — never sent over the network
-- **Pairing by QR**: scanning the QR is what authorizes the app; there is no shared key in the source
-- **Session Management** with automatic keep-alive
+## Why it's built differently
 
-See [PROTOCOL.md](PROTOCOL.md) for the exact scheme.
+- **Confirmed delivery, not fire-and-forget.** Every message is acknowledged by the host
+  per chunk. The app shows `sending → delivered → failed` as a real state — your text is
+  retained and the failure is shown if a send drops, never silently cleared.
+- **Pairing with no shared secret in the app.** The key lives only in the QR. Scanning it
+  is what authorizes the session; there is no password baked into the build and nothing
+  sensitive crosses the network during the handshake.
+- **Encrypted per session.** After pairing, every message is AES-256-GCM encrypted under a
+  key unique to that connection. A message that doesn't authenticate is rejected — there is
+  no plaintext fallback.
 
-### 📱 Easy Setup
-- **QR Code Scanning** using ML Kit for instant connection
-- **Manual URL Entry** as fallback option
-- **Auto-Connect** to last server on app launch
-- **Quick Reconnect** button when disconnected
-- **Connection status** with real-time visual feedback
+## Quick start
 
-### ⚙️ Customizable Settings
-- **Haptic Feedback** toggle for tactile response
-- **Key Repeat Rate** adjustment (0.5x - 2.0x)
-- **Typing Delay** configuration (0-200ms)
-- **Auto-Connect** toggle for startup behavior
-- **Last Server** memory with clear option
-- **Reset All Settings** with confirmation
+1. Install and run **[keybridge-server](https://github.com/dog-broad/keybridge-server)** on your computer — it shows a QR code.
+2. Open KeyBridge, go to **Scanner**, and point the camera at that QR (or enter the `ws://` URL by hand).
+3. Tap **Connect**. Once the status reads **Ready**, type in the text box or use the key grid — it lands on your PC.
 
-## Prerequisites
+Phone and PC must be on the same Wi-Fi network.
 
-### Android Requirements
-- Android 7.0 (API level 24) or higher
-- Camera permission for QR code scanning
-- Vibration permission for haptic feedback
-- Internet/WiFi access for WebSocket connection
+## Yours, light or dark
 
-### Server Requirements
-Make sure you have the KeyBridge Server running on your computer:
-- Python 3.8 or higher
-- Required Python packages: `websockets`, `pynput`, `qrcode`, `cryptography`
+<p align="center">
+  <img src="docs/media/themes.png" alt="Settings in light and dark themes" width="680">
+</p>
 
-## Installation
+Light, dark, or follow the system — the choice persists across launches. Typing delay, key
+repeat rate, haptics, Mac-style modifier labels, and auto-connect are all adjustable, and
+every control is reachable by screen reader; animations honor the system "remove animations"
+setting.
 
-### Download APK
-1. Download the latest APK from the releases page
-2. Enable "Install from unknown sources" in Android settings
-3. Install the APK on your device
+## Built with
 
-### Build from Source
-1. Clone this repository
-2. Open the project in Android Studio
-3. Build and run the application
+Kotlin · Jetpack Compose · Material 3 · MVVM with `StateFlow` · CameraX + ML Kit (QR) · DataStore. Minimum Android 7.0 (API 24).
 
-```bash
-git clone <repository-url>
-cd KeyBridge
-./gradlew assembleDebug
-```
+## Protocol
 
-## Quick Start Guide
-
-### 1. Set Up the Server
-1. Start the KeyBridge Server on your computer
-2. The server will display a QR code containing connection data
-3. Make sure your phone and computer are on the same network
-
-### 2. Connect the App
-1. Open the KeyBridge app on your Android device
-2. Tap "Scan QR Code" on the home screen
-3. Grant camera permission when prompted
-4. Point your camera at the QR code displayed by the server
-5. Tap "Connect" when the QR code is detected
-
-### 3. Start Controlling
-Once connected (indicated by pulsing green WiFi icon):
-- Type text in the input field and tap "Send"
-- Use modifier keys, navigation, and action keys
-- Control media playback with media keys
-- Use quick actions for common hotkeys
-
-## App Architecture
-
-### Technology Stack
-- **Kotlin** - Primary programming language
-- **Jetpack Compose** - Modern declarative UI toolkit
-- **Material Design 3** - Latest design system with dynamic theming
-- **CameraX** - Camera functionality for QR scanning
-- **ML Kit** - Google's machine learning for barcode detection
-- **Java-WebSocket** - WebSocket client implementation
-- **StateFlow/ViewModel** - Reactive state management
-- **MVVM Architecture** - Clean separation of concerns
-
-### Project Structure
-```
-app/src/main/java/com/keybridge/
-├── navigation/          # Navigation graph and bottom bar
-├── screens/
-│   ├── HomeScreen.kt    # Main keyboard controls
-│   ├── QRScannerScreen.kt # QR/manual connection
-│   └── ProfileScreen.kt  # Settings and about
-├── ui/theme/           # Material 3 theming
-│   ├── Color.kt
-│   ├── Theme.kt
-│   └── Type.kt
-├── viewmodel/
-│   ├── WebSocketViewModel.kt    # Connection & messaging
-│   └── PreferencesViewModel.kt  # User settings
-└── MainActivity.kt    # App entry point
-```
-
-The wire protocol the app speaks is specified in [PROTOCOL.md](PROTOCOL.md).
-
-## Communication Protocol
-
-Input travels in a small versioned envelope, and the server acknowledges every chunk it
-applies — which is how the app shows *confirmed* delivery and clears the text field only
-once the server has it. Long text is split into ordered chunks the app tracks as
-progress. The full contract — envelope fields, input types, the acknowledgement shape,
-chunking, and bounded idempotent retry — is specified in **[PROTOCOL.md](PROTOCOL.md)**.
-
-A `type` message, for example, looks like:
+Input travels in a small versioned envelope, and the host acknowledges every chunk it
+applies — which is how the app shows confirmed delivery and tracks progress. A `type`
+message looks like:
 
 ```json
 { "v": 1, "id": "…", "seq": 0, "total": 1, "type": "type",
-  "payload": { "text": "Hello World" } }
+  "payload": { "text": "Hello, world" } }
 ```
 
-### Supported Key Codes
+The full contract — envelope fields, input types, the acknowledgement shape, chunking, and
+bounded idempotent retry — is in **[PROTOCOL.md](PROTOCOL.md)**.
+
+<details>
+<summary><b>Supported keys</b></summary>
+
 | Category | Keys |
 |----------|------|
 | Modifiers | `ctrl`, `alt`, `shift`, `cmd` |
 | Navigation | `up`, `down`, `left`, `right`, `home`, `end`, `page_up`, `page_down` |
 | Actions | `tab`, `enter`, `space`, `backspace`, `delete`, `esc`, `insert` |
-| Function | `f1` - `f12` |
+| Function | `f1` – `f12` |
 | System | `caps_lock`, `num_lock`, `scroll_lock`, `menu`, `pause`, `print_screen` |
 | Media | `media_play_pause`, `media_next`, `media_previous`, `media_volume_up`, `media_volume_down`, `media_volume_mute` |
 
-## Troubleshooting
-
-### Connection Issues
-- Ensure both devices are on the same WiFi network
-- Check firewall settings on the computer (allow port 8765)
-- Verify the server is running and displays the QR code
-- Try using manual URL entry: `ws://YOUR_PC_IP:8765`
-- Check if authentication token hasn't expired (regenerate QR code)
-
-### QR Scanner Issues
-- Grant camera permission in Android Settings > Apps
-- Ensure adequate lighting when scanning
-- Hold the camera steady at ~15-30cm distance
-- Make sure the QR code is fully visible in the frame
-
-### Keys Not Working
-- Verify connection status shows "Ready ✓"
-- Check that the server window is active/focused
-- Some keys may require administrator privileges on the server
-- Media keys depend on OS-level support
-
-### Performance Issues
-- Close other apps to free up memory
-- Check network signal strength
-- Reduce typing delay in settings for faster response
-- Enable haptic feedback for better tactile confirmation
-
-## Contributing
-
-We welcome contributions! Please:
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing`)
-3. Make your changes with proper commit messages
-4. Add tests if applicable
-5. Submit a pull request
-
-### Code Style
-- Follow Kotlin coding conventions
-- Use meaningful variable and function names
-- Add KDoc comments for public APIs
-- Ensure proper error handling
+</details>
 
 ## License
 
-Apache License 2.0
-
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
-
-## Changelog
-
-### Version 1.0.0
-- Initial release with full keyboard control
-- QR code and manual connection
-- AES-256-GCM encrypted communication
-- Media controls and system keys
-- Auto-connect and quick reconnect
-- Material Design 3 UI with dark/light themes
-- Haptic feedback and customizable settings
-
----
-
-**Note**: This app requires the corresponding KeyBridge Server to be running on your computer. Make sure to set up the server before using the mobile app.
+[Apache License 2.0](LICENSE).
