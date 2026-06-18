@@ -104,4 +104,100 @@
     <string name="toast_connected">Connected to server</string>
     <string name="toast_disconnected">Disconnected from server</string>
     <string name="toast_connection_error">Connection error occurred</string>
+
+    <!-- Home Screen connection status (exact visible text) -->
+    <string name="status_disconnected">Disconnected</string>
+    <string name="status_connecting">Connecting...</string>
+    <string name="status_connected">Connected</string>
+    <string name="status_ready">Ready ✓</string>
+    <string name="status_connection_error">Connection Error</string>
+
+    <!-- Home Screen actions -->
+    <string name="snackbar_disconnected_from_server">Disconnected from server</string>
+    <string name="snackbar_reconnecting">Reconnecting...</string>
+    <string name="snackbar_delivered">Delivered</string>
+    <string name="button_scan_qr_short">Scan QR</string>
+    <string name="button_reconnect">Reconnect</string>
+    <string name="button_disconnect">Disconnect</string>
+    <string name="cd_clear_error">Clear error</string>
+    <string name="feature_chip_auth">Auth</string>
+    <string name="feature_chip_encrypted">Encrypted</string>
+
+    <!-- Text input section -->
+    <string name="text_input_placeholder_dots">Type text to send...</string>
+    <string name="delivery_sending">Sending…</string>
+    <string name="delivery_sending_progress">Sending %1$d/%2$d…</string>
+    <string name="delivery_sending_parts_cd">Sending %1$d of %2$d parts</string>
+    <string name="button_retry">Retry</string>
+
+    <!-- Keyboard control section headers -->
+    <string name="section_modifiers">Modifiers (tap to hold, tap again to release)</string>
+    <string name="section_navigation">Navigation</string>
+    <string name="section_actions">Actions</string>
+    <string name="section_media_controls">Media Controls</string>
+    <string name="section_system_keys">System Keys</string>
+    <string name="section_quick_actions">Quick Actions</string>
+
+    <!-- QR Scanner Screen -->
+    <string name="qr_logo_cd">KeyBridge Logo</string>
+    <string name="qr_connect_title">Connect to KeyBridge Server</string>
+    <string name="qr_connect_subtitle">Scan QR code or enter URL manually</string>
+    <string name="qr_mode_scan">QR Scan</string>
+    <string name="qr_mode_manual">Manual</string>
+    <string name="qr_how_to_connect_title">How to Connect</string>
+    <string name="qr_how_to_connect_manual">1. Run the KeyBridge Server on your PC\n2. Note the WebSocket URL (usually ws://YOUR_IP:8765)\n3. Enter the URL above and tap Connect</string>
+    <string name="qr_how_to_connect_scan">1. Run the KeyBridge Server on your PC\n2. A QR code will appear on your screen\n3. Point your camera at the QR code</string>
+    <string name="permission_camera_required">Camera Permission Required</string>
+    <string name="permission_camera_rationale">We need camera access to scan QR codes for quick connection setup.</string>
+    <string name="button_grant_permission">Grant Permission</string>
+    <string name="qr_server_found">Server Found!</string>
+    <string name="button_scan_again_text">Scan Again</string>
+    <string name="button_connecting_dots">Connecting...</string>
+    <string name="button_connect_text">Connect</string>
+    <string name="qr_position_frame">Position QR code within the frame</string>
+    <string name="manual_connection_title">Manual Connection</string>
+    <string name="manual_connection_subtitle">Enter the WebSocket URL from your computer</string>
+    <string name="manual_server_url_label">Server URL</string>
+    <string name="manual_server_url_placeholder">ws://192.168.1.100:8765</string>
+    <string name="manual_example_urls_title">Example URLs</string>
+    <string name="manual_example_urls">• ws://192.168.1.XXX:8765\n• ws://10.0.0.XXX:8765\n• ws://YOUR_PC_IP:8765</string>
+
+    <!-- Profile Screen -->
+    <string name="profile_app_subtitle">Control your PC remotely</string>
+    <string name="profile_stat_encrypted_label">Encrypted</string>
+    <string name="profile_stat_encrypted_value">AES-256</string>
+    <string name="profile_stat_latency_label">Latency</string>
+    <string name="profile_stat_latency_value">&lt; 50ms</string>
+    <string name="profile_stat_protocol_label">Protocol</string>
+    <string name="profile_stat_protocol_value">WebSocket</string>
+    <string name="keyboard_settings_card_title">Keyboard Settings</string>
+    <string name="mac_mode_title">Mac Mode</string>
+    <string name="mac_mode_enabled">Using ⌘ Cmd, ⌥ Option labels</string>
+    <string name="mac_mode_disabled">Using Ctrl, Alt, Win labels</string>
+    <string name="haptic_feedback_card_title">Haptic Feedback</string>
+    <string name="key_repeat_rate_label">Key Repeat Rate</string>
+    <string name="key_repeat_rate_subtitle">Speed when holding keys</string>
+    <string name="key_repeat_rate_value">%1$sx</string>
+    <string name="typing_delay_label">Typing Delay</string>
+    <string name="typing_delay_subtitle">Delay between characters</string>
+    <string name="typing_delay_value">%1$dms</string>
+    <string name="connection_card_title">Connection</string>
+    <string name="auto_connect_card_title">Auto-Connect</string>
+    <string name="auto_connect_card_enabled">Auto-connect to last server on app start</string>
+    <string name="auto_connect_card_disabled">Manual connection required</string>
+    <string name="last_server_title">Last Server</string>
+    <string name="cd_clear_last_server">Clear last server</string>
+    <string name="reset_card_title">Reset</string>
+    <string name="button_reset_all_settings">Reset All Settings</string>
+    <string name="about_card_title">About</string>
+    <string name="about_version_title">Version</string>
+    <string name="about_version_value">1.0.0</string>
+    <string name="about_built_with_title">Built with</string>
+    <string name="about_built_with_value">Jetpack Compose • Material 3</string>
+    <string name="about_security_title">Security</string>
+    <string name="about_security_value">AES-256-GCM Encryption</string>
+    <string name="reset_dialog_title">Reset All Settings?</string>
+    <string name="reset_dialog_message">This will reset all preferences to their default values. This action cannot be undone.</string>
+    <string name="button_reset">Reset</string>
+    <string name="button_cancel">Cancel</string>
 </resources>
