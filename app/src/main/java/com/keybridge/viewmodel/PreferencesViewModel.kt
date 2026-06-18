@@ -17,133 +17,109 @@
 package com.keybridge.viewmodel
 
 import android.content.Context
-import android.content.SharedPreferences
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.SharedPreferencesMigration
+import androidx.datastore.preferences.core.MutablePreferences
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
-class PreferencesViewModel(private val context: Context) : ViewModel() {
-    
-    companion object {
-        private const val PREFS_NAME = "keybridge_prefs"
-        private const val KEY_DARK_THEME = "dark_theme"
-        private const val KEY_REPEAT_RATE = "key_repeat_rate"
-        private const val KEY_TYPING_DELAY = "typing_delay"
-        private const val KEY_HAPTIC_FEEDBACK = "haptic_feedback"
-        private const val KEY_AUTO_CONNECT = "auto_connect"
-        private const val KEY_LAST_SERVER_URL = "last_server_url"
-        private const val KEY_MAC_MODE = "mac_mode"
+private const val LEGACY_PREFS_NAME = "keybridge_prefs"
+
+// One DataStore for the whole process. On first access it runs a one-time migration of the
+// old SharedPreferences file, so existing users keep all their settings.
+private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "keybridge_settings",
+    produceMigrations = { ctx -> listOf(SharedPreferencesMigration(ctx, LEGACY_PREFS_NAME)) },
+)
+
+class PreferencesViewModel(context: Context) : ViewModel() {
+
+    private val dataStore = context.applicationContext.settingsDataStore
+
+    private object Keys {
+        val THEME_MODE = stringPreferencesKey("theme_mode")
+        val DARK_THEME = booleanPreferencesKey("dark_theme")  // legacy boolean, for migration only
+        val REPEAT_RATE = floatPreferencesKey("key_repeat_rate")
+        val TYPING_DELAY = floatPreferencesKey("typing_delay")
+        val HAPTIC = booleanPreferencesKey("haptic_feedback")
+        val AUTO_CONNECT = booleanPreferencesKey("auto_connect")
+        val LAST_SERVER_URL = stringPreferencesKey("last_server_url")
+        val MAC_MODE = booleanPreferencesKey("mac_mode")
     }
-    
-    private val sharedPrefs: SharedPreferences = 
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    
-    // Theme preferences
-    private val _isDarkTheme = MutableStateFlow(
-        sharedPrefs.getBoolean(KEY_DARK_THEME, false)
-    )
-    val isDarkTheme: StateFlow<Boolean> = _isDarkTheme.asStateFlow()
-    
-    // Keyboard preferences
-    private val _keyRepeatRate = MutableStateFlow(
-        sharedPrefs.getFloat(KEY_REPEAT_RATE, 1.0f)
-    )
+
+    // Seed the flows from a one-time synchronous snapshot so the very first frame already has
+    // the stored values (no theme flash). This first read also triggers the migration above.
+    // Writes go through DataStore asynchronously.
+    private val initial: Preferences = runBlocking { dataStore.data.first() }
+
+    private val _themeMode = MutableStateFlow(resolveInitialThemeMode())
+    val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
+
+    private val _keyRepeatRate = MutableStateFlow(initial[Keys.REPEAT_RATE] ?: 1.0f)
     val keyRepeatRate: StateFlow<Float> = _keyRepeatRate.asStateFlow()
-    
-    private val _typingDelay = MutableStateFlow(
-        sharedPrefs.getFloat(KEY_TYPING_DELAY, 50f)
-    )
+
+    private val _typingDelay = MutableStateFlow(initial[Keys.TYPING_DELAY] ?: 50f)
     val typingDelay: StateFlow<Float> = _typingDelay.asStateFlow()
-    
-    private val _hapticFeedback = MutableStateFlow(
-        sharedPrefs.getBoolean(KEY_HAPTIC_FEEDBACK, true)
-    )
+
+    private val _hapticFeedback = MutableStateFlow(initial[Keys.HAPTIC] ?: true)
     val hapticFeedback: StateFlow<Boolean> = _hapticFeedback.asStateFlow()
-    
-    // Connection preferences
-    private val _autoConnect = MutableStateFlow(
-        sharedPrefs.getBoolean(KEY_AUTO_CONNECT, false)
-    )
+
+    private val _autoConnect = MutableStateFlow(initial[Keys.AUTO_CONNECT] ?: false)
     val autoConnect: StateFlow<Boolean> = _autoConnect.asStateFlow()
-    
-    private val _lastServerUrl = MutableStateFlow(
-        sharedPrefs.getString(KEY_LAST_SERVER_URL, "") ?: ""
-    )
+
+    private val _lastServerUrl = MutableStateFlow(initial[Keys.LAST_SERVER_URL] ?: "")
     val lastServerUrl: StateFlow<String> = _lastServerUrl.asStateFlow()
-    
-    // Mac mode - use Mac-specific labels and hotkeys
-    private val _macMode = MutableStateFlow(
-        sharedPrefs.getBoolean(KEY_MAC_MODE, false)
-    )
+
+    private val _macMode = MutableStateFlow(initial[Keys.MAC_MODE] ?: false)
     val macMode: StateFlow<Boolean> = _macMode.asStateFlow()
-    
-    fun setDarkTheme(isDark: Boolean) {
-        viewModelScope.launch {
-            _isDarkTheme.value = isDark
-            sharedPrefs.edit().putBoolean(KEY_DARK_THEME, isDark).apply()
-        }
+
+    private fun resolveInitialThemeMode(): ThemeMode = when {
+        initial[Keys.THEME_MODE] != null -> ThemeMode.fromStorage(initial[Keys.THEME_MODE])
+        // Migrate the legacy boolean: existing users keep their look; fresh installs get SYSTEM.
+        initial[Keys.DARK_THEME] != null -> if (initial[Keys.DARK_THEME] == true) ThemeMode.DARK else ThemeMode.LIGHT
+        else -> ThemeMode.SYSTEM
     }
-    
-    fun setKeyRepeatRate(rate: Float) {
-        viewModelScope.launch {
-            _keyRepeatRate.value = rate
-            sharedPrefs.edit().putFloat(KEY_REPEAT_RATE, rate).apply()
-        }
+
+    fun setThemeMode(mode: ThemeMode) = update(_themeMode, mode) {
+        it[Keys.THEME_MODE] = mode.storageValue
+        it.remove(Keys.DARK_THEME)
     }
-    
-    fun setTypingDelay(delay: Float) {
-        viewModelScope.launch {
-            _typingDelay.value = delay
-            sharedPrefs.edit().putFloat(KEY_TYPING_DELAY, delay).apply()
-        }
+
+    fun setKeyRepeatRate(rate: Float) = update(_keyRepeatRate, rate) { it[Keys.REPEAT_RATE] = rate }
+    fun setTypingDelay(delay: Float) = update(_typingDelay, delay) { it[Keys.TYPING_DELAY] = delay }
+    fun setHapticFeedback(enabled: Boolean) = update(_hapticFeedback, enabled) { it[Keys.HAPTIC] = enabled }
+    fun setAutoConnect(enabled: Boolean) = update(_autoConnect, enabled) { it[Keys.AUTO_CONNECT] = enabled }
+    fun setLastServerUrl(url: String) = update(_lastServerUrl, url) { it[Keys.LAST_SERVER_URL] = url }
+    fun setMacMode(enabled: Boolean) = update(_macMode, enabled) { it[Keys.MAC_MODE] = enabled }
+
+    /** Update the in-memory flow immediately and persist the change to DataStore. */
+    private fun <T> update(flow: MutableStateFlow<T>, value: T, edit: suspend (MutablePreferences) -> Unit) {
+        flow.value = value
+        viewModelScope.launch { dataStore.edit { edit(it) } }
     }
-    
-    fun setHapticFeedback(enabled: Boolean) {
-        viewModelScope.launch {
-            _hapticFeedback.value = enabled
-            sharedPrefs.edit().putBoolean(KEY_HAPTIC_FEEDBACK, enabled).apply()
-        }
-    }
-    
-    fun setAutoConnect(enabled: Boolean) {
-        viewModelScope.launch {
-            _autoConnect.value = enabled
-            sharedPrefs.edit().putBoolean(KEY_AUTO_CONNECT, enabled).apply()
-        }
-    }
-    
-    fun setLastServerUrl(url: String) {
-        viewModelScope.launch {
-            _lastServerUrl.value = url
-            sharedPrefs.edit().putString(KEY_LAST_SERVER_URL, url).apply()
-        }
-    }
-    
-    fun setMacMode(enabled: Boolean) {
-        viewModelScope.launch {
-            _macMode.value = enabled
-            sharedPrefs.edit().putBoolean(KEY_MAC_MODE, enabled).apply()
-        }
-    }
-    
-    // Clear all preferences
+
     fun clearPreferences() {
-        viewModelScope.launch {
-            sharedPrefs.edit().clear().apply()
-            
-            // Reset all state flows to defaults
-            _isDarkTheme.value = false
-            _keyRepeatRate.value = 1.0f
-            _typingDelay.value = 50f
-            _hapticFeedback.value = true
-            _autoConnect.value = false
-            _lastServerUrl.value = ""
-            _macMode.value = false
-        }
+        _themeMode.value = ThemeMode.SYSTEM
+        _keyRepeatRate.value = 1.0f
+        _typingDelay.value = 50f
+        _hapticFeedback.value = true
+        _autoConnect.value = false
+        _lastServerUrl.value = ""
+        _macMode.value = false
+        viewModelScope.launch { dataStore.edit { it.clear() } }
     }
 }
 
@@ -156,4 +132,4 @@ class PreferencesViewModelFactory(private val context: Context) : ViewModelProvi
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
-} 
+}

@@ -33,6 +33,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import com.keybridge.R
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
+import com.keybridge.util.isValidServerUrl
+import com.keybridge.util.validateServerUrl
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
@@ -132,20 +137,20 @@ fun QRScannerScreen(
                 // KeyBridge Logo
                 Image(
                     painter = painterResource(id = R.drawable.ic_keybridge_logo),
-                    contentDescription = "KeyBridge Logo",
+                    contentDescription = stringResource(R.string.qr_logo_cd),
                     modifier = Modifier.size(56.dp),
                     contentScale = ContentScale.Fit
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "Connect to KeyBridge Server",
+                    text = stringResource(R.string.qr_connect_title),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                     textAlign = TextAlign.Center
                 )
                 Text(
-                    text = "Scan QR code or enter URL manually",
+                    text = stringResource(R.string.qr_connect_subtitle),
                     style = MaterialTheme.typography.bodyMedium,
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
@@ -180,7 +185,7 @@ fun QRScannerScreen(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("QR Scan")
+                        Text(stringResource(R.string.qr_mode_scan))
                     }
                     
                     OutlinedButton(
@@ -203,7 +208,7 @@ fun QRScannerScreen(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Manual")
+                        Text(stringResource(R.string.qr_mode_manual))
                     }
                     Spacer(modifier = Modifier.weight(1f))
                 }
@@ -277,20 +282,16 @@ fun QRScannerScreen(
                 modifier = Modifier.padding(16.dp)
             ) {
                 Text(
-                    text = "How to Connect",
+                    text = stringResource(R.string.qr_how_to_connect_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = if (showManualConnection) {
-                        "1. Run the KeyBridge Server on your PC\n" +
-                        "2. Note the WebSocket URL (usually ws://YOUR_IP:8765)\n" +
-                        "3. Enter the URL above and tap Connect"
+                        stringResource(R.string.qr_how_to_connect_manual)
                     } else {
-                        "1. Run the KeyBridge Server on your PC\n" +
-                        "2. A QR code will appear on your screen\n" +
-                        "3. Point your camera at the QR code"
+                        stringResource(R.string.qr_how_to_connect_scan)
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -314,13 +315,13 @@ fun PermissionRequestContent(onRequestPermission: () -> Unit) {
             tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
-            text = "Camera Permission Required",
+            text = stringResource(R.string.permission_camera_required),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center
         )
         Text(
-            text = "We need camera access to scan QR codes for quick connection setup.",
+            text = stringResource(R.string.permission_camera_rationale),
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -335,7 +336,7 @@ fun PermissionRequestContent(onRequestPermission: () -> Unit) {
                 modifier = Modifier.size(18.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Grant Permission")
+            Text(stringResource(R.string.button_grant_permission))
         }
     }
 }
@@ -378,7 +379,7 @@ fun QRCodeDetectedContent(
         )
         
         Text(
-            text = "Server Found!",
+            text = stringResource(R.string.qr_server_found),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
@@ -441,7 +442,7 @@ fun QRCodeDetectedContent(
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Scan Again")
+                Text(stringResource(R.string.button_scan_again_text))
             }
             
             Button(
@@ -464,7 +465,7 @@ fun QRCodeDetectedContent(
                     )
                 }
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(if (isProcessing) "Connecting..." else "Connect")
+                Text(if (isProcessing) stringResource(R.string.button_connecting_dots) else stringResource(R.string.button_connect_text))
             }
         }
     }
@@ -549,7 +550,7 @@ fun CameraPreview(
             modifier = Modifier.padding(top = 300.dp)
         ) {
             Text(
-                text = "Position QR code within the frame",
+                text = stringResource(R.string.qr_position_frame),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center
@@ -649,27 +650,31 @@ fun ManualConnectionContent(
         )
         
         Text(
-            text = "Manual Connection",
+            text = stringResource(R.string.manual_connection_title),
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary
         )
-        
+
         Text(
-            text = "Enter the WebSocket URL from your computer",
+            text = stringResource(R.string.manual_connection_subtitle),
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         
+        val urlError = validateServerUrl(url)
         OutlinedTextField(
             value = url,
             onValueChange = onUrlChange,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Server URL") },
-            placeholder = { Text("ws://192.168.1.100:8765") },
+            label = { Text(stringResource(R.string.manual_server_url_label)) },
+            placeholder = { Text(stringResource(R.string.manual_server_url_placeholder)) },
             enabled = !isProcessing,
             singleLine = true,
+            isError = urlError != null,
+            supportingText = urlError?.let { { Text(stringResource(it)) } },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Filled.Wifi,
@@ -678,12 +683,12 @@ fun ManualConnectionContent(
             },
             shape = RoundedCornerShape(12.dp)
         )
-        
+
         Spacer(modifier = Modifier.height(8.dp))
-        
+
         Button(
             onClick = onConnect,
-            enabled = !isProcessing && url.isNotBlank(),
+            enabled = !isProcessing && isValidServerUrl(url),
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp)
         ) {
@@ -702,7 +707,7 @@ fun ManualConnectionContent(
             }
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = if (isProcessing) "Connecting..." else "Connect",
+                text = if (isProcessing) stringResource(R.string.button_connecting_dots) else stringResource(R.string.button_connect_text),
                 fontWeight = FontWeight.Medium
             )
         }
@@ -720,14 +725,14 @@ fun ManualConnectionContent(
                 modifier = Modifier.padding(12.dp)
             ) {
                 Text(
-                    text = "Example URLs",
+                    text = stringResource(R.string.manual_example_urls_title),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "• ws://192.168.1.XXX:8765\n• ws://10.0.0.XXX:8765\n• ws://YOUR_PC_IP:8765",
+                    text = stringResource(R.string.manual_example_urls),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
