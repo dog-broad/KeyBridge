@@ -28,6 +28,7 @@ import com.keybridge.R
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.AppSettingsAlt
+import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DarkMode
@@ -48,11 +49,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.keybridge.viewmodel.PreferencesViewModel
+import com.keybridge.viewmodel.ThemeMode
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,7 +63,7 @@ fun ProfileScreen(
     @Suppress("UNUSED_PARAMETER") navController: NavHostController,
     preferencesViewModel: PreferencesViewModel
 ) {
-    val isDarkTheme by preferencesViewModel.isDarkTheme.collectAsState()
+    val themeMode by preferencesViewModel.themeMode.collectAsState()
     val keyRepeatRate by preferencesViewModel.keyRepeatRate.collectAsState()
     val typingDelay by preferencesViewModel.typingDelay.collectAsState()
     val hapticFeedback by preferencesViewModel.hapticFeedback.collectAsState()
@@ -82,8 +85,8 @@ fun ProfileScreen(
         
         // Theme Settings
         ThemeSettingsCard(
-            isDarkTheme = isDarkTheme,
-            onThemeChange = { preferencesViewModel.setDarkTheme(it) }
+            themeMode = themeMode,
+            onThemeModeChange = { preferencesViewModel.setThemeMode(it) }
         )
         
         // Keyboard Settings
@@ -253,9 +256,14 @@ fun QuickStat(
 
 @Composable
 fun ThemeSettingsCard(
-    isDarkTheme: Boolean,
-    onThemeChange: (Boolean) -> Unit
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit
 ) {
+    val options = listOf(
+        Triple(ThemeMode.LIGHT, Icons.Filled.LightMode, R.string.theme_light),
+        Triple(ThemeMode.DARK, Icons.Filled.DarkMode, R.string.theme_dark),
+        Triple(ThemeMode.SYSTEM, Icons.Filled.BrightnessAuto, R.string.theme_system),
+    )
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp)
@@ -274,23 +282,36 @@ fun ThemeSettingsCard(
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                    text = "Appearance",
+                    text = stringResource(R.string.appearance_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
             }
-            
-            SettingItem(
-                icon = if (isDarkTheme) Icons.Filled.DarkMode else Icons.Filled.LightMode,
-                title = "Dark Theme",
-                description = if (isDarkTheme) "Dark mode is enabled" else "Light mode is enabled",
-                action = {
-                    Switch(
-                        checked = isDarkTheme,
-                        onCheckedChange = onThemeChange
+
+            Text(
+                text = stringResource(R.string.theme_label),
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                options.forEach { (mode, icon, labelRes) ->
+                    FilterChip(
+                        selected = themeMode == mode,
+                        onClick = { onThemeModeChange(mode) },
+                        label = { Text(stringResource(labelRes)) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
                     )
                 }
-            )
+            }
         }
     }
 }

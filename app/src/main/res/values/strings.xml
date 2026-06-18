@@ -38,9 +38,10 @@
     <!-- Profile Screen -->
     <string name="profile_subtitle">Remote Control App</string>
     <string name="appearance_title">Appearance</string>
-    <string name="dark_theme_title">Dark Theme</string>
-    <string name="dark_theme_enabled">Dark mode is enabled</string>
-    <string name="dark_theme_disabled">Light mode is enabled</string>
+    <string name="theme_label">Theme</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_system">System</string>
     <string name="keyboard_settings_title">Keyboard Settings</string>
     <string name="key_repeat_rate_title">Key Repeat Rate</string>
     <string name="key_repeat_rate_description">Adjust how fast keys repeat when held down</string>
