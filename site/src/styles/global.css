@@ -251,7 +251,9 @@ img {
   display: grid;
   grid-template-columns: 1.05fr 0.95fr;
   gap: 3rem;
-  align-items: center;
+  /* Top-align so the headline reads immediately; the tall portrait device
+     anchors the right and extends below the copy. */
+  align-items: start;
 }
 
 .hero h1 {
@@ -301,10 +303,11 @@ img {
   justify-content: center;
 }
 
+/* The hero device PNG carries its own bezel + shadow on a transparent
+   margin, so no border-radius here — just cap the width. */
 .hero-art img {
-  border-radius: 22px;
   width: 100%;
-  max-width: 330px;
+  max-width: 384px;
 }
 
 .hero-art::after {

@@ -4,6 +4,7 @@ import { getCollection } from 'astro:content';
 import Base from '../layouts/Base.astro';
 import { SITE, LINKS, DOWNLOADS, FEATURES, STEPS, withBase } from '../lib/site';
 
+import heroDevice from '../assets/hero-device.png';
 import pair from '../assets/pair.png';
 import deliver from '../assets/deliver.png';
 import control from '../assets/control.png';
@@ -41,8 +42,8 @@ const guides = (await getCollection('guides'))
       </div>
       <div class="hero-art">
         <Image
-          src={deliver}
-          alt="The KeyBridge app sending text with live delivery progress"
+          src={heroDevice}
+          alt="The KeyBridge app showing its key grid — modifiers, media, function keys, and shortcuts"
           loading="eager"
         />
       </div>
