@@ -1,0 +1,35 @@
+---
+// The KeyBridge keycap mark, inlined so it inherits crisp rendering and can be
+// sized from the caller. Decorative by default; pass a label where it stands alone.
+interface Props {
+  size?: number;
+  label?: string;
+}
+const { size = 32, label } = Astro.props;
+---
+
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 512 512"
+  width={size}
+  height={size}
+  role="img"
+  aria-label={label}
+  aria-hidden={label ? undefined : 'true'}
+  class="logo-mark"
+>
+  <defs>
+    <linearGradient id="kb-grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2CA9BC"></stop>
+      <stop offset="1" stop-color="#1091A6"></stop>
+    </linearGradient>
+  </defs>
+  <rect x="101" y="122" width="310" height="294" rx="66" fill="#1A2E4A"></rect>
+  <rect x="101" y="104" width="310" height="294" rx="66" fill="url(#kb-grad)"></rect>
+  <rect x="131" y="130" width="250" height="118" rx="40" fill="#ffffff" opacity="0.10"></rect>
+  <g stroke="#ffffff" stroke-width="38" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M205 178 L205 330"></path>
+    <path d="M205 256 L302 178"></path>
+    <path d="M205 256 L302 330"></path>
+  </g>
+</svg>
