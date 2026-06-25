@@ -78,6 +78,8 @@ Desktop.ini
 connection_qr.png
 *.png
 !app/src/main/res/**/*.png
+# README/documentation images must be tracked so they render on the repo page
+!docs/media/*.png
 
 # Release files
 RELEASE_GUIDE.md
