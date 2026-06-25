@@ -29,6 +29,8 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -640,7 +642,14 @@ fun ManualConnectionContent(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = Modifier.padding(24.dp)
+        // Scrollable + IME-aware so the field and Connect button stay reachable when the
+        // keyboard is up (and when the inline error grows the field). The parent Box has a
+        // fixed height, so without this the centered content was clipped.
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .imePadding()
+            .padding(24.dp)
     ) {
         Icon(
             imageVector = Icons.Filled.Link,
