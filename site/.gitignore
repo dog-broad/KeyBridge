@@ -1,0 +1,12 @@
+# Astro / Node build artifacts — never tracked
+node_modules/
+dist/
+.astro/
+
+# Environment / logs
+.env
+.env.production
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store

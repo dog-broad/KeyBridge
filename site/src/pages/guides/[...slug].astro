@@ -1,0 +1,35 @@
+---
+import { getCollection, render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import { withBase } from '../../lib/site';
+
+export async function getStaticPaths() {
+  const guides = await getCollection('guides');
+  return guides.map((entry) => ({ params: { slug: entry.id }, props: { entry } }));
+}
+
+const { entry } = Astro.props;
+const { Content } = await render(entry);
+const { title, description, audience, minutes, updated } = entry.data;
+---
+
+<Base title={title} description={description}>
+  <article class="section">
+    <div class="container">
+      <div class="article-head">
+        <a class="back-link" href={withBase('guides')}>← All guides</a>
+        <p class="eyebrow">{audience}</p>
+        <h1>{title}</h1>
+        <p class="lede">{description}</p>
+        <p class="meta">
+          {minutes} min read{
+            updated ? ` · Updated ${updated.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}` : ''
+          }
+        </p>
+      </div>
+      <div class="prose">
+        <Content />
+      </div>
+    </div>
+  </article>
+</Base>
