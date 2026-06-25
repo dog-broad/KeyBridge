@@ -1,16 +1,17 @@
 ---
-import { Image } from 'astro:assets';
 import { getCollection } from 'astro:content';
 import Base from '../layouts/Base.astro';
+import DeviceFrame from '../components/DeviceFrame.astro';
 import { SITE, LINKS, DOWNLOADS, FEATURES, STEPS, withBase } from '../lib/site';
 
-import heroDevice from '../assets/hero-device.png';
-import pair from '../assets/pair.png';
-import deliver from '../assets/deliver.png';
-import control from '../assets/control.png';
-import themes from '../assets/themes.png';
+import appHome from '../assets/app-home.png';
+import appPair from '../assets/app-pair.png';
+import appSend from '../assets/app-send.png';
+import appControl from '../assets/app-control.png';
+import appThemeLight from '../assets/app-theme-light.png';
+import appThemeDark from '../assets/app-theme-dark.png';
 
-const stepImages = { pair, deliver, control };
+const stepImages = { pair: appPair, deliver: appSend, control: appControl };
 
 const guides = (await getCollection('guides'))
   .sort((a, b) => a.data.order - b.data.order)
@@ -41,10 +42,12 @@ const guides = (await getCollection('guides'))
         </div>
       </div>
       <div class="hero-art">
-        <Image
-          src={heroDevice}
-          alt="The KeyBridge app showing its key grid — modifiers, media, function keys, and shortcuts"
-          loading="eager"
+        <DeviceFrame
+          src={appHome}
+          alt="The KeyBridge app: connected status, text input, and keyboard controls"
+          width={340}
+          eager
+          class="device--hero"
         />
       </div>
     </div>
@@ -68,7 +71,7 @@ const guides = (await getCollection('guides'))
                 <p>{step.body}</p>
               </div>
               <div class="step-media">
-                <Image src={stepImages[step.image]} alt={step.alt} />
+                <DeviceFrame src={stepImages[step.image]} alt={step.alt} width={252} />
               </div>
             </article>
           ))
@@ -116,7 +119,10 @@ const guides = (await getCollection('guides'))
           full accessibility in both. Readable, high-contrast, screen-reader friendly.
         </p>
       </div>
-      <Image src={themes} alt="KeyBridge settings shown in light and dark themes" />
+      <div class="device-duo">
+        <DeviceFrame src={appThemeLight} alt="KeyBridge settings in the light theme" width={216} />
+        <DeviceFrame src={appThemeDark} alt="KeyBridge settings in the dark theme" width={216} />
+      </div>
     </div>
   </section>
 

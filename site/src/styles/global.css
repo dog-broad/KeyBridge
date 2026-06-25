@@ -303,13 +303,6 @@ img {
   justify-content: center;
 }
 
-/* The hero device PNG carries its own bezel + shadow on a transparent
-   margin, so no border-radius here — just cap the width. */
-.hero-art img {
-  width: 100%;
-  max-width: 384px;
-}
-
 .hero-art::after {
   content: '';
   position: absolute;
@@ -329,8 +322,60 @@ img {
   }
   .hero-art {
     order: -1;
-    max-width: 460px;
   }
+}
+
+/* ---- Device frame (live CSS phone) ---- */
+.device {
+  width: var(--device-w, 300px);
+  padding: calc(var(--device-w, 300px) * 0.034);
+  border-radius: calc(var(--device-w, 300px) * 0.135);
+  background: linear-gradient(150deg, #34343a, #0b0b0d);
+  box-shadow:
+    0 34px 70px -22px rgba(0, 0, 0, 0.75),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.device-screen {
+  border-radius: calc(var(--device-w, 300px) * 0.105);
+  overflow: hidden;
+  background: #000;
+  line-height: 0;
+}
+
+.device-screen img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Angled hero device — a creative product-shot tilt; the glow sits behind. */
+.device--hero {
+  transform: perspective(1700px) rotateY(-14deg) rotateX(3deg) rotate(1.5deg);
+  transform-origin: 65% 50%;
+}
+
+@media (max-width: 880px) {
+  .device--hero {
+    transform: rotate(2deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .device--hero {
+    transform: rotate(2deg);
+  }
+}
+
+/* Staggered pair for the themes section. */
+.device-duo {
+  display: flex;
+  justify-content: center;
+  gap: 1.4rem;
+}
+
+.device-duo .device:last-child {
+  margin-top: 2.6rem;
 }
 
 /* ---- Steps ---- */
@@ -374,13 +419,6 @@ img {
 .step-media {
   display: flex;
   justify-content: center;
-}
-
-.step-media img {
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  max-height: 420px;
-  width: auto;
 }
 
 @media (max-width: 760px) {
@@ -451,11 +489,6 @@ img {
   grid-template-columns: 1fr 1.1fr;
   gap: 3rem;
   align-items: center;
-}
-
-.themes-grid img {
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
 }
 
 @media (max-width: 880px) {
