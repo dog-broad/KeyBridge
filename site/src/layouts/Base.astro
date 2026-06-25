@@ -1,0 +1,108 @@
+---
+import '../styles/global.css';
+import Logo from '../components/Logo.astro';
+import { SITE, NAV, LINKS, withBase } from '../lib/site';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const { title, description = SITE.description } = Astro.props;
+const pageTitle = title ? `${title} — ${SITE.name}` : `${SITE.name} — ${SITE.tagline}`;
+
+const canonical = new URL(Astro.url.pathname, SITE.origin).href;
+const ogImage = new URL(withBase('og.png'), SITE.origin).href;
+
+const resolve = (href: string, external?: boolean) =>
+  external ? href : href.startsWith('#') ? `${withBase('')}${href}` : withBase(href);
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" type="image/svg+xml" href={withBase('favicon.svg')} />
+    <meta name="theme-color" content="#161a23" />
+    <meta name="generator" content={Astro.generator} />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={SITE.name} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <header class="nav">
+      <div class="container nav-inner">
+        <a class="brand" href={withBase('')} aria-label={`${SITE.name} home`}>
+          <Logo size={30} />
+          {SITE.name}
+        </a>
+        <nav aria-label="Primary">
+          <ul class="nav-links">
+            {
+              NAV.map((item) => (
+                <li>
+                  <a
+                    href={resolve(item.href, item.external)}
+                    {...(item.external ? { target: '_blank', rel: 'noopener' } : {})}
+                  >
+                    {item.label}
+                  </a>
+                </li>
+              ))
+            }
+          </ul>
+        </nav>
+        <div class="nav-cta">
+          <a class="btn btn-primary" href={LINKS.appRelease} target="_blank" rel="noopener">
+            Download
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <slot />
+    </main>
+
+    <footer class="footer">
+      <div class="container footer-inner">
+        <div>
+          <a class="brand" href={withBase('')}>
+            <Logo size={26} />
+            {SITE.name}
+          </a>
+          <p class="footer-meta">A wireless input bridge for your PC. Local network only — no telemetry.</p>
+        </div>
+        <ul class="footer-links">
+          <li><a href={withBase('guides')}>Guides</a></li>
+          <li><a href={LINKS.appRepo} target="_blank" rel="noopener">App on GitHub</a></li>
+          <li><a href={LINKS.hostRepo} target="_blank" rel="noopener">Host on GitHub</a></li>
+        </ul>
+      </div>
+    </footer>
+  </body>
+</html>

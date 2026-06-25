@@ -80,6 +80,9 @@ connection_qr.png
 !app/src/main/res/**/*.png
 # README/documentation images must be tracked so they render on the repo page
 !docs/media/*.png
+# Launch-site source images (build inputs) must be tracked, not generated cruft
+!site/src/assets/*.png
+!site/public/*.png
 
 # Release files
 RELEASE_GUIDE.md
